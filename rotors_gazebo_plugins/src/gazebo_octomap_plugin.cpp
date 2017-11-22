@@ -66,6 +66,8 @@ bool OctomapFromGazeboWorld::ServiceCallback(
   if (req.filename != "") {
     if (octomap_) {
       std::string path = req.filename;
+      //ROS_INFO("writing to file : %s",path);
+      std::cout << "writing to file: " <<path<<std::endl;
       octomap_->writeBinary(path);
       gzlog << std::endl << "Octree saved as " << path << std::endl;
     } else {
