@@ -4,7 +4,7 @@ project(rotors_planner)
 
 add_definitions(-std=c++11)
 
-find_package(catkin REQUIRED COMPONENTS gazebo_msgs geometry_msgs mav_msgs roscpp sensor_msgs)
+find_package(catkin REQUIRED COMPONENTS gazebo_msgs geometry_msgs mav_msgs roscpp sensor_msgs rotors_comm)
 
 ###################################
 ## catkin specific configuration ##
@@ -22,6 +22,8 @@ catkin_package(
     mav_msgs
     roscpp
     sensor_msgs
+    rotors_comm
+  DEPENDS ompl fcl octomap
 )
 
 ###########
@@ -109,9 +111,18 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
+find_package(octomap REQUIRED)
+include_directories(${OCTOMAP_INCLUDE_DIRS})
+#link_libraries(${OCTOMAP_LIBRARIES})
+
+find_package(ompl REQUIRED)
+include_directories(${OMPL_INCLUDE_DIRS})
+#link_libraries(${OMPL_LIBRARIES})
+
+
 add_executable(RRT_planner src/RRT_planner.cpp)
-target_link_libraries(RRT_planner ${catkin_LIBRARIES})
-add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS})
+target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
+add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS} ${OCTOMAP_EXPORTTED_TARGETs} ${OMPL_EXPORTED_TARGETS})
 
 install(TARGETS RRT_planner
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

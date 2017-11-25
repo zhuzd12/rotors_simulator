@@ -12,12 +12,17 @@
 #include <octomap/octomap.h>
 #include <octomap/OcTreeNode.h>
 
+#include <octomap_msgs/conversions.h>
+#include <rotors_comm/Octomap.h>
+
+
 // ompl library header
 #include <ompl/base/SpaceInformation.h>
-#include <ompl/base/spaces/SO3StateSpace.h>
+//#include <ompl/base/spaces/SO3StateSpace.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <ompl/geometric/planners/rrt/RRT.h>
 #include <ompl/config.h>
+
 
 //#include <fcl/common/detail/profiler.h>
 #include <iostream>
@@ -29,9 +34,38 @@ namespace og = ompl::geometric;
 
 static const int64_t kNanoSecondsInSecond = 1000000000;
 
+class WaypointWithTime {
+ public:
+  WaypointWithTime()
+      : waiting_time(0), yaw(0.0) {
+  }
+
+  WaypointWithTime(double t, float x, float y, float z, float _yaw)
+      : position(x, y, z), yaw(_yaw), waiting_time(t) {
+  }
+
+  Eigen::Vector3d position;
+  double yaw;
+  double waiting_time;
+};
+
+template<class TreeType>
+  void copy_readTree(TreeType* octree, const octomap_msgs::Octomap& msg){
+    std::stringstream datastream;
+    if (msg.data.size() > 0){
+      datastream.write((const char*) &msg.data[0], msg.data.size());
+      octree->readBinaryData(datastream);
+    }
+  }
+
+
 class Plane3DEnvironment
 {
 public:
+
+    ~Plane3DEnvironment(){
+        delete octomap_;
+    }
 
     Plane3DEnvironment(const std::string octomap_file)
     {
@@ -57,21 +91,60 @@ public:
             space->addDimension(metricMin_x,metricMax_x);
             space->addDimension(metricMin_y,metricMax_y);
             space->addDimension(metricMin_z,metricMax_z);
-            //maxWidth_ = ppm_.getWidth() - 1;
-            //maxHeight_ = ppm_.getHeight() - 1;
             //ss_.reset(new og::SimpleSetup(ob::StateSpacePtr(space)));
             //si_ = std::make_shared<ob::SpaceInformation>(space);
-            ob::SpaceInformationPtr si(new ob::SpaceInformation(space));
-
+            //ob::SpaceInformationPtr si(new ob::SpaceInformation(space));
             //std::shared_ptr<ob::SpaceInformationPtr> si(std::make_shared<ob::SpaceInformation>(space));
-            si_ = si;
-            delete si;
+
+            //si_ = si;
+
+            si_.reset(new ob::SpaceInformation(ob::StateSpacePtr(space)));
             // set state validity checking for this space
             si_->setStateValidityChecker(std::bind(&Plane3DEnvironment::isStateValid, this, std::placeholders::_1));
             // space->setup();
             si_->setStateValidityCheckingResolution(1.0 / space->getMaximumExtent());
             //ss_->getSpaceInformation()->setStateValidityCheckingResolution(1.0 / space->getMaximumExtent());
-            //      ss_->setPlanner(ob::PlannerPtr(new og::RRTConnect(ss_->getSpaceInformation())));
+        }
+    }
+
+    Plane3DEnvironment(const octomap_msgs::Octomap octomap_message)
+    {
+        bool ok = false;
+        try
+        {
+
+           // octomap_ = (octomap::OcTree*)octomap_msgs::msgToMap(octomap_message);
+            octomap_ = new octomap::OcTree(octomap_message.resolution);
+            copy_readTree(octomap_, octomap_message);
+            ok = true;
+        }
+        catch(ompl::Exception &ex)
+        {
+            OMPL_ERROR("Unable to get octomap .\n%s", ex.what());
+        }
+        if (ok)
+        {
+            ob::RealVectorStateSpace *space = new ob::RealVectorStateSpace();
+            double metricMax_x, metricMax_y, metricMax_z;
+            double metricMin_x, metricMin_y, metricMin_z;
+            octomap_->getMetricMax(metricMin_x, metricMax_y, metricMax_z);
+            octomap_->getMetricMin(metricMin_x, metricMin_y, metricMin_z);
+            space->addDimension(metricMin_x,metricMax_x);
+            space->addDimension(metricMin_y,metricMax_y);
+            space->addDimension(metricMin_z,metricMax_z);
+            //ss_.reset(new og::SimpleSetup(ob::StateSpacePtr(space)));
+            //si_ = std::make_shared<ob::SpaceInformation>(space);
+            //ob::SpaceInformationPtr si(new ob::SpaceInformation(space));
+            //std::shared_ptr<ob::SpaceInformationPtr> si(std::make_shared<ob::SpaceInformation>(space));
+
+            //si_ = si;
+
+            si_.reset(new ob::SpaceInformation(ob::StateSpacePtr(space)));
+            // set state validity checking for this space
+            si_->setStateValidityChecker(std::bind(&Plane3DEnvironment::isStateValid, this, std::placeholders::_1));
+            // space->setup();
+            si_->setStateValidityCheckingResolution(1.0 / space->getMaximumExtent());
+            //ss_->getSpaceInformation()->setStateValidityCheckingResolution(1.0 / space->getMaximumExtent());
         }
     }
 
@@ -112,22 +185,7 @@ public:
         }
     }
 
-        //ss_->setStartAndGoalStates(start, goal);
-        // generate a few solutions; all will be added to the goal;
 
-//        const std::size_t ns = ss_->getProblemDefinition()->getSolutionCount();
-//        OMPL_INFORM("Found %d solutions", (int)ns);
-//        if (ss_->haveSolutionPath())
-//        {
-//            ss_->simplifySolution();
-//            og::PathGeometric &p = ss_->getSolutionPath();
-//            ss_->getPathSimplifier()->simplifyMax(p);
-//            ss_->getPathSimplifier()->smoothBSpline(p);
-//            return true;
-//        }
-//        else
-//            return false;
-//    }
 
     void getsolution(ob::PathPtr path) const{
       path = pdf_->getSolutionPath();
@@ -141,17 +199,21 @@ public:
     {
         if (!si_ || !pdf_->hasSolution())
             return;
-//        og::PathGeometric &p = pdf_->getSolutionPath();
-//        p.interpolate();
-//        for (std::size_t i = 0 ; i < p.getStateCount() ; ++i)
-//        {
-//            const int w = std::min(maxWidth_, (int)p.getState(i)->as<ob::RealVectorStateSpace::StateType>()->values[0]);
-//            const int h = std::min(maxHeight_, (int)p.getState(i)->as<ob::RealVectorStateSpace::StateType>()->values[1]);
-//            ompl::PPM::Color &c = ppm_.getPixel(h, w);
-//            c.red = 255;
-//            c.green = 0;
-//            c.blue = 0;
-//        }
+        og::PathGeometric &p = *(pdf_->getSolutionPath()->as<og::PathGeometric>());
+       // std::static_pointer_cast<og::PathGeometric> p = pdf_->getSolutionPath();
+        p.interpolate();
+        double temp_t = 5.0;
+        const float DEG_2_RAD = M_PI / 180.0;
+        for (std::size_t i = 0 ; i < p.getStateCount() ; ++i)
+              {
+                  const double x = (double)p.getState(i)->as<ob::RealVectorStateSpace::StateType>()->values[0];
+                  const double y = (double)p.getState(i)->as<ob::RealVectorStateSpace::StateType>()->values[1];
+                  const double z = (double)p.getState(i)->as<ob::RealVectorStateSpace::StateType>()->values[2];
+
+                  waypoints.push_back(WaypointWithTime(temp_t, x, y, z, 0.0 * DEG_2_RAD));
+                  temp_t = temp_t +3;
+              }
+
     }
 
     void save(const std::string filename)
@@ -163,42 +225,28 @@ public:
 
 private:
 
-    bool isStateValid(const ob::ScopedState<> *state) const
+    bool isStateValid(const ob::State *state) const
     {
-//        const int w = std::min((int)state->as<ob::RealVectorStateSpace::StateType>()->values[0], maxWidth_);
-//        const int h = std::min((int)state->as<ob::RealVectorStateSpace::StateType>()->values[1], maxHeight_);
-
-//        const ompl::PPM::Color &c = ppm_.getPixel(h, w);
-//        return c.red > 127 && c.green > 127 && c.blue > 127;
-
-        octomap::OcTreeNode *state_node = octomap_->search(*state[0], *state[1], *state[2]);
+        const double x = (double)state->as<ob::RealVectorStateSpace::StateType>()->values[0];
+        const double y = (double)state->as<ob::RealVectorStateSpace::StateType>()->values[1];
+        const double z = (double)state->as<ob::RealVectorStateSpace::StateType>()->values[2];
+        octomap::OcTreeNode *state_node = octomap_->search(x, y, z);
         return !octomap_->isNodeOccupied(state_node);
     }
 
-    //og::SimpleSetupPtr ss_;
     ob::SpaceInformationPtr si_;
     ob::ProblemDefinitionPtr pdf_;
-    //int maxWidth_;
-    //int maxHeight_;
-    //ompl::PPM ppm_;
     octomap::OcTree *octomap_;
 
+public:
+    std::vector<WaypointWithTime> waypoints;
 };
 
-class WaypointWithTime {
- public:
-  WaypointWithTime()
-      : waiting_time(0), yaw(0.0) {
-  }
+bool sim_running = false;
 
-  WaypointWithTime(double t, float x, float y, float z, float _yaw)
-      : position(x, y, z), yaw(_yaw), waiting_time(t) {
-  }
-
-  Eigen::Vector3d position;
-  double yaw;
-  double waiting_time;
-};
+void callback(const sensor_msgs::ImuPtr& msg) {
+  sim_running = true;
+}
 
 
 int main(int argc, char **argv)
@@ -207,17 +255,51 @@ int main(int argc, char **argv)
   ros::NodeHandle nh;
 
   ros::Publisher trajectory_pub =
-      nh.advertise<trajectory_msgs::MultiDOFJointTrajectory>(
-      mav_msgs::default_topics::COMMAND_TRAJECTORY, 10);
+  nh.advertise<trajectory_msgs::MultiDOFJointTrajectory>(
+  mav_msgs::default_topics::COMMAND_TRAJECTORY, 10);
 
+  // The IMU is used, to determine if the simulator is running or not.
+  ros::Subscriber sub = nh.subscribe("imu", 10, &callback);
+
+  // The octomap src client
+  ros::ServiceClient octo_client = nh.serviceClient<rotors_comm::Octomap>("/world/get_octomap");
+  rotors_comm::Octomap octo_src;
+  octo_src.request.bounding_box_lengths.x = 60 ;
+  octo_src.request.bounding_box_lengths.y = 60 ;
+  octo_src.request.bounding_box_lengths.z = 60 ;
+  octo_src.request.bounding_box_origin.x = 20;
+  octo_src.request.bounding_box_origin.y = 20;
+  octo_src.request.bounding_box_origin.z = 20;
+  octo_src.request.leaf_size = 0.25;
+  octo_src.request.filename = "powerplant";  // wait for generic map name
+  if(octo_client.call(octo_src)){
+    ROS_INFO("receive octomap %s",octo_src.request.filename.c_str());
+  }
+  else{
+    ROS_INFO("Failed to receive octomap");
+    return 1;
+  }
+
+  ROS_INFO("Wait for simulation to become ready...");
+
+  while (!sim_running && ros::ok()) {
+    ros::spinOnce();
+    ros::Duration(0.1).sleep();
+  }
+
+  ROS_INFO("basic RRT planner begins");
+
+  // Wait for 30s such that everything can settle and the mav flies to the initial position.
+  ros::Duration(30).sleep();
 
   std::cout << "OMPL version: " << OMPL_VERSION << std::endl;
 
   //boost::filesystem::path path("$(find rotors_planner)/octoworld/powerplant.bt");
-  std::string octo_file= "../resource/power_plant.bt";
-  Plane3DEnvironment env(octo_file);
+  //std::string octo_file= "../resource/power_plant.bt";
+ // Plane3DEnvironment env(octo_file);
+  Plane3DEnvironment env(octo_src.response.map);
 
-  if (env.plan(0, 0, 1, 25, 65,45))
+  if (env.plan(0, 0, 1, 25, 35, 45))
   {
       //env.recordSolution();
 
@@ -226,21 +308,10 @@ int main(int argc, char **argv)
 
   ob::PathPtr path;
   env.getsolution(path);
-  std::vector< ob::State * > state_waypoints =path->as;
-  int num_waypoints = 0;
-  num_waypoints = env.getsolutioncount();
   ROS_INFO("Start publishing planned trajectory.");
 
-  std::vector<WaypointWithTime> waypoints;
-  const float DEG_2_RAD = M_PI / 180.0;
-  double temp_t = 5.0;
-  for(int i=0;i<num_waypoints;i++){
-    //ob::State *current_state = std::make_shared<ob::State>(state_waypoints[i]);
-    ob::State current_state = state_waypoints[i];
-    waypoints.push_back(WaypointWithTime(temp_t,current_state[0],current_state[1], current_state[2], 0.0 * DEG_2_RAD));
-    temp_t = temp_t +5;
-  }
 
+  std::vector<WaypointWithTime> waypoints = env.waypoints;
   ROS_INFO("Read %d waypoints.", (int) waypoints.size());
   trajectory_msgs::MultiDOFJointTrajectoryPtr msg(new trajectory_msgs::MultiDOFJointTrajectory);
   msg->header.stamp = ros::Time::now();
