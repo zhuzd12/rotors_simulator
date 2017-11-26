@@ -68,7 +68,7 @@ bool OctomapFromGazeboWorld::ServiceCallback(
       std::string path = req.filename;
       //ROS_INFO("writing to file : %s",path);
       std::cout << "writing to file: " <<path<<std::endl;
-      octomap_->writeBinary(path);
+      //octomap_->writeBinary(path);
       gzlog << std::endl << "Octree saved as " << path << std::endl;
     } else {
       ROS_ERROR("The octree is NULL. Will not save that.");

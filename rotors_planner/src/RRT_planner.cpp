@@ -74,12 +74,12 @@ public:
         {
             //std::istream stream_octo;
             //stream_octo.read(octomap_file.c_str());
-            octomap_->readBinary(octomap_file);
+            octomap_ = new octomap::OcTree(octomap_file);
             ok = true;
         }
         catch(ompl::Exception &ex)
         {
-            OMPL_ERROR("Unable to load %s.\n%s", octomap_file.c_str(), ex.what());
+            ROS_INFO("Unable to load %s.\n%s", octomap_file.c_str(), ex.what());
         }
         if (ok)
         {
@@ -167,7 +167,7 @@ public:
         planner->setProblemDefinition(pdf_);
         planner->setup();
 
-        ob::PlannerStatus solved = planner->ob::Planner::solve(1.0);
+        ob::PlannerStatus solved = planner->ob::Planner::solve(10.0);
 
         if (solved)
             {
@@ -211,7 +211,7 @@ public:
                   const double z = (double)p.getState(i)->as<ob::RealVectorStateSpace::StateType>()->values[2];
 
                   waypoints.push_back(WaypointWithTime(temp_t, x, y, z, 0.0 * DEG_2_RAD));
-                  temp_t = temp_t +3;
+                  temp_t = temp_t +1;
               }
 
     }
@@ -220,7 +220,7 @@ public:
     {
         if (!si_)
             return;
-        octomap_->write(filename);
+        octomap_->writeBinary(filename);
     }
 
 private:
@@ -258,6 +258,8 @@ int main(int argc, char **argv)
   nh.advertise<trajectory_msgs::MultiDOFJointTrajectory>(
   mav_msgs::default_topics::COMMAND_TRAJECTORY, 10);
 
+  ros::Publisher octomap_pub = nh.advertise<octomap_msgs::Octomap>("/octo_test", 10);
+
   // The IMU is used, to determine if the simulator is running or not.
   ros::Subscriber sub = nh.subscribe("imu", 10, &callback);
 
@@ -270,6 +272,7 @@ int main(int argc, char **argv)
   octo_src.request.bounding_box_origin.x = 20;
   octo_src.request.bounding_box_origin.y = 20;
   octo_src.request.bounding_box_origin.z = 20;
+  octo_src.request.publish_octomap = true;
   octo_src.request.leaf_size = 0.25;
   octo_src.request.filename = "powerplant";  // wait for generic map name
   if(octo_client.call(octo_src)){
@@ -277,8 +280,12 @@ int main(int argc, char **argv)
   }
   else{
     ROS_INFO("Failed to receive octomap");
-    return 1;
+    //return 1;
   }
+
+  ros::V_string args;
+  //ros::removeROSArgs(argc, argv, args);
+
 
   ROS_INFO("Wait for simulation to become ready...");
 
@@ -290,27 +297,39 @@ int main(int argc, char **argv)
   ROS_INFO("basic RRT planner begins");
 
   // Wait for 30s such that everything can settle and the mav flies to the initial position.
-  ros::Duration(30).sleep();
+  ros::Duration(10).sleep();
 
   std::cout << "OMPL version: " << OMPL_VERSION << std::endl;
 
   //boost::filesystem::path path("$(find rotors_planner)/octoworld/powerplant.bt");
-  //std::string octo_file= "../resource/power_plant.bt";
- // Plane3DEnvironment env(octo_file);
-  Plane3DEnvironment env(octo_src.response.map);
+  std::string octo_file ;
 
-  if (env.plan(0, 0, 1, 25, 35, 45))
+  if (argc == 2 ) {
+    //ROS_ERROR("");
+    //return -1;
+    octo_file = argv[1];
+    ROS_INFO("read octomap file: %s", argv[1]);
+  }
+
+   Plane3DEnvironment env(octo_file);
+  //Plane3DEnvironment env(octo_src.response.map);
+    ROS_INFO("instantiate planner");
+
+  if (env.plan(0, 0, 1, 0, 1, 7))
   {
       //env.recordSolution();
 
       env.save("result_demo.bt");
   }
-
+  else {
+    ROS_INFO("failed to get solution");
+    return 2;
+  }
   ob::PathPtr path;
   env.getsolution(path);
-  ROS_INFO("Start publishing planned trajectory.");
+  ROS_INFO("Start publishingtrajectory_pub planned trajectory.");
 
-
+  env.recordSolution();
   std::vector<WaypointWithTime> waypoints = env.waypoints;
   ROS_INFO("Read %d waypoints.", (int) waypoints.size());
   trajectory_msgs::MultiDOFJointTrajectoryPtr msg(new trajectory_msgs::MultiDOFJointTrajectory);
@@ -326,13 +345,36 @@ int main(int argc, char **argv)
     trajectory_point.setFromYaw(wp.yaw);
     trajectory_point.time_from_start_ns = time_from_start_ns;
 
+    std::cout << "Waypoint XYZ: " << wp.position(0) << " "
+              <<  wp.position(1) <<  " " <<  wp.position(2)  << std::endl;
+
     time_from_start_ns += static_cast<int64_t>(wp.waiting_time * kNanoSecondsInSecond);
 
     mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &msg->points[i]);
   }
+
+//  ros::Rate rate(10);
+//      while(ros::ok()){
+//        trajectory_pub.publish(msg);
+//        rate.sleep();
+//      }
+
   trajectory_pub.publish(msg);
 
   ros::spinOnce();
+
+    octomap::OcTree *octomap_ = new octomap::OcTree(octo_file);
+    octomap_msgs::Octomap octo_msg;
+    octo_msg.header.frame_id = "/world";
+    octomap_msgs::binaryMapToMsg(*octomap_,octo_msg);
+
+    ros::Rate rate(10);
+    while(ros::ok()){
+      octomap_pub.publish(octo_msg);
+      rate.sleep();
+    }
+    octomap_->read(octo_file);
+
   ros::shutdown();
 
   return 0;
