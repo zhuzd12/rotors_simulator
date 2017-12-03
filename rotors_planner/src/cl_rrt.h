@@ -10,7 +10,7 @@ namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
 
-typedef function<bool(const ob::State *, oc::Control *)> ControllerFn;
+typedef std::function<bool(const ob::State *, oc::Control *)> ControllerFn;
 
 class CL_rrt : public ob::Planner
 {
@@ -86,12 +86,12 @@ protected:
     Controlfn_ = svc;
   }
 
-  const Controlfn_& getController() const
+  const ControllerFn& getController() const
   {
     return Controlfn_;
   }
 
-  bool propagateuntilstop(const ob::State *state, const oc::Control *control, std::vector<ob::State *> &result) const;
+  bool propagateuntilstop(const ob::State *state, const oc::Control *control, const ob::State *heading_state, std::vector<ob::State *> &result) const;
 
   void freeMemory();
 
@@ -111,6 +111,7 @@ protected:
   ob::State *current_state{nullptr};
   // double nearst_radius{50};
   bool goal_solve{false};
+  double path_deviation{.1};
 protected:
   ControllerFn Controlfn_;
 

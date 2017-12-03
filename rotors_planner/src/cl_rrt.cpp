@@ -64,9 +64,24 @@ void CL_rrt::freeMemory()
 
 }
 
-bool CL_rrt::propagatewhilestop(const ompl::base::State *state, const ompl::control::Control *control, std::vector<ompl::base::State *> &result) const
+bool CL_rrt::propagatewhilestop(const ob::State *state, const oc::Control *control, const ob::State *heading_state, std::vector<ob::State *> &result) const
 {
-
+  double dv = std::std::numeric_limits<double>::infinity();
+  int st = 0;
+  while(dv >= path_deviation){
+    result.resize(st + 1);
+    result[st] = si_->allocState();
+    siC_->getStatePropagator()->propagate(state, control, siC_->getPropagationStepSize(), result[st]);
+    if(!si_->isValid(result[st]))
+    {
+      si_->freeState(result[st]);
+      result.resize(st);
+      return false;
+    }
+    ++st;
+    dv = si_->distance(result[st], heading_state);
+  }
+  return true;
 }
 
 ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
@@ -126,7 +141,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
     }
 
     std::vector<ob::State *> pstates;
-    if(propagateuntilstop(nmotion->state, rctrl, pstates))
+    if(propagateuntilstop(nmotion->state, rctrl, rstate, pstates))
     {
       if(pstates.size() >= siC_->getMinControlDuration()){
 

@@ -4,7 +4,7 @@ project(rotors_planner)
 
 add_definitions(-std=c++11)
 
-find_package(catkin REQUIRED COMPONENTS gazebo_msgs geometry_msgs mav_msgs roscpp sensor_msgs rotors_comm)
+find_package(catkin REQUIRED COMPONENTS gazebo_msgs geometry_msgs mav_msgs roscpp sensor_msgs rotors_comm rotors_control)
 
 ###################################
 ## catkin specific configuration ##
@@ -23,7 +23,8 @@ catkin_package(
     roscpp
     sensor_msgs
     rotors_comm
-  DEPENDS ompl fcl octomap
+    rotors_control
+  ## DEPENDS ompl fcl octomap
 )
 
 ###########
@@ -123,6 +124,10 @@ include_directories(${OMPL_INCLUDE_DIRS})
 add_executable(RRT_planner src/RRT_planner.cpp)
 target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS} ${OCTOMAP_EXPORTTED_TARGETs} ${OMPL_EXPORTED_TARGETS})
+
+add_executable(CL_RRT_test src/CL_RRT_test.cpp)
+target_link_libraries(CL_RRT_test ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
+add_dependencies(CL_RRT_test ${catkin_EXPORTED_TARGETS} ${OCTOMAP_EXPORTTED_TARGETs} ${OMPL_EXPORTED_TARGETS})
 
 install(TARGETS RRT_planner
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
