@@ -43,6 +43,7 @@
 <build_depend>fcl</build_depend>
 <build_depend>rotors_comm</build_depend>
 <build_depend>rotors_control</build_depend>
+<build_depend>cmake_modules</build_depend>
 
 
 <!-- Dependencies needed after this package is compiled. -->
@@ -58,5 +59,6 @@
 <run_depend>rotors_comm</run_depend>
 <run_depend>fcl</run_depend>
 <run_depend>rotors_control</run_depend>
+<run_depend>dynamic_reconfigure</run_depend>
 </package>
 

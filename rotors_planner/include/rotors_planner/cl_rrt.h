@@ -6,11 +6,15 @@
 #include <ompl/base/goals/GoalState.h>
 #include <functional>
 
+namespace rotors_planner {
+
+
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
 namespace oc = ompl::control;
 
-typedef std::function<bool(const ob::State *, oc::Control *)> ControllerFn;
+
+typedef std::function<bool(const ob::State *, const ob::State *, oc::Control *)> ControllerFn;
 
 class CL_rrt : public ob::Planner
 {
@@ -18,6 +22,8 @@ public:
   CL_rrt(const oc::SpaceInformationPtr &si);
 
   ~CL_rrt() override;
+
+  void setup();
 
   void getPlannerData(ob::PlannerData &data) const override;
 
@@ -76,9 +82,9 @@ protected:
     Motion *parent{nullptr};
   };
 
-  bool provideControl(const ob::State *state, oc::Control *control)
+  bool provideControl(const ob::State *state, const ob::State *heading_state,  oc::Control *control)
   {
-    return Controlfn_(state,control);
+    return Controlfn_(state, heading_state, control);
   }
 
   void setController(const ControllerFn &svc)
@@ -91,7 +97,7 @@ protected:
     return Controlfn_;
   }
 
-  bool propagateuntilstop(const ob::State *state, const oc::Control *control, const ob::State *heading_state, std::vector<ob::State *> &result) const;
+  bool propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result) const;
 
   void freeMemory();
 
@@ -108,7 +114,7 @@ protected:
   //double global_low_bound{std::numeric_limits<double>::infinity()};
   ompl::RNG rng_;
   Motion *lastGoalMotion_{nullptr};
-  ob::State *current_state{nullptr};
+  //ob::State *current_state{nullptr};
   // double nearst_radius{50};
   bool goal_solve{false};
   double path_deviation{.1};
@@ -118,3 +124,5 @@ protected:
 };
 
 #endif // CL_RRT_H
+
+}

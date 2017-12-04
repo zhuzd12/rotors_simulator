@@ -1,7 +1,9 @@
-#include "cl_rrt.h"
+#include "rotors_planner/cl_rrt.h"
 #include <ompl/base/goals/GoalSampleableRegion.h>
 #include <ompl/tools/config/SelfConfig.h>
 #include <limits>
+
+namespace rotors_planner {
 
 
 CL_rrt::CL_rrt(const oc::SpaceInformationPtr &si) : ob::Planner(si,"CL_rrt")
@@ -27,7 +29,7 @@ void CL_rrt::clear()
   freeMemory();
   if(!nn_)
     nn_->clear();
-  lastGoalMotion= nullptr;
+  lastGoalMotion_= nullptr;
   // something else declare in this class need to be cleaned
 }
 
@@ -35,7 +37,7 @@ void CL_rrt::setup()
 {
   Planner::setup();
   if (!nn_)
-    nn_.reset(tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
+    nn_.reset(ompl::tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
 
   nn_->setDistanceFunction([this](const Motion *a, const Motion *b)
       {
@@ -64,14 +66,18 @@ void CL_rrt::freeMemory()
 
 }
 
-bool CL_rrt::propagatewhilestop(const ob::State *state, const oc::Control *control, const ob::State *heading_state, std::vector<ob::State *> &result) const
+bool CL_rrt::propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result) const
 {
-  double dv = std::std::numeric_limits<double>::infinity();
+  double dv = std::numeric_limits<double>::infinity();
   int st = 0;
+  oc::Control *rctrl;
+  ob::State *current_State = si_->allocState();
+  si_->copyState(current_State, state);
   while(dv >= path_deviation){
+    Controlfn_(current_State, heading_state, rctrl);
     result.resize(st + 1);
     result[st] = si_->allocState();
-    siC_->getStatePropagator()->propagate(state, control, siC_->getPropagationStepSize(), result[st]);
+    siC_->getStatePropagator()->propagate(current_State, rctrl, siC_->getPropagationStepSize(), result[st]);
     if(!si_->isValid(result[st]))
     {
       si_->freeState(result[st]);
@@ -79,6 +85,7 @@ bool CL_rrt::propagatewhilestop(const ob::State *state, const oc::Control *contr
       return false;
     }
     ++st;
+    si_->copyState(current_State, result[st]);
     dv = si_->distance(result[st], heading_state);
   }
   return true;
@@ -110,7 +117,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
   OMPL_INFORM("%s: Starting planning with %u states already in datastructure", getName().c_str(), nn_->size());
 
   Motion *solution = nullptr;
-  Motion *approxsol = nullptr;
+  //Motion *approxsol = nullptr;
   double approxdif = std::numeric_limits<double>::infinity();
 
   auto *rmotion = new Motion(siC_);
@@ -134,14 +141,14 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
     nn_->nearestR(rmotion,radius,Nmotion); */
 
     /* get controller output using Controller function */
-    while(!Controlfn_(nmotion->state,rctrl))
+    while(!Controlfn_(nmotion->state, rstate, rctrl))
     {
       // OMPL_DEBUG("invalid sample state");
       sampler_->sampleUniform(rstate);
     }
 
     std::vector<ob::State *> pstates;
-    if(propagateuntilstop(nmotion->state, rctrl, rstate, pstates))
+    if(propagateuntilstop(nmotion->state, rstate, pstates))
     {
       if(pstates.size() >= siC_->getMinControlDuration()){
 
@@ -181,8 +188,8 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
       {
         si_->freeState(pstates[p]);
       }
-      if(solved)
-        break;
+     // if(solved)
+       // break;
     }
       else
         for (auto &pstate :pstates)
@@ -224,8 +231,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
   delete rmotion;
   si_->freeState(xstate);
   OMPL_INFORM("%s: Created %u states", getName().c_str(), nn_->size());
-  return base::PlannerStatus(solved, approximate);
-
+  return ob::PlannerStatus(goal_solve, approximate);
 
 
 
@@ -242,7 +248,7 @@ void CL_rrt::getPlannerData(ob::PlannerData &data) const
   double delta = siC_->getPropagationStepSize();
 
   if(lastGoalMotion_)
-    data.addGoalVertex(base::PlannerDataVertex(lastGoalMotion_->state));
+    data.addGoalVertex(ob::PlannerDataVertex(lastGoalMotion_->state));
 
   for(auto m : motions)
   {
@@ -256,6 +262,8 @@ void CL_rrt::getPlannerData(ob::PlannerData &data) const
     else
       data.addStartVertex(ob::PlannerDataVertex(m->state));
     }
-  }
+
+
+}
 
 }
