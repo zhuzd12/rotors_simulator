@@ -51,6 +51,16 @@ public:
     return maxDistance_;
   }
 
+  void setPathdeviation( double pathdeviation)
+  {
+    path_deviation = pathdeviation;
+  }
+
+  double getPathdeviation() const
+  {
+    return path_deviation;
+  }
+
   template <template <typename T> class NN>
   void setNearestNeighbors()
   {

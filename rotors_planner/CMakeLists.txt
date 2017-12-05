@@ -17,7 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(Eigen REQUIRED)
 find_package(ompl REQUIRED)
-find_package(octomap REQUIRED)
+# find_package(octomap REQUIRED)
 
 
 ## The catkin_package macro generates cmake config files for your package
@@ -38,13 +38,13 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
   ${OMPL_INCLUDE_DIRS}
-  ${OCTOMAP_LIBRARIES}
+  #${OCTOMAP_LIBRARIES}
 
 )
 
-#find_package(octomap REQUIRED)
-#include_directories(${OCTOMAP_INCLUDE_DIRS})
-#link_libraries(${OCTOMAP_LIBRARIES})
+find_package(octomap REQUIRED)
+include_directories(${OCTOMAP_INCLUDE_DIRS})
+link_libraries(${OCTOMAP_LIBRARIES})
 
 #find_package(ompl REQUIRED)
 #include_directories(${OMPL_INCLUDE_DIRS})
@@ -57,11 +57,11 @@ target_link_libraries(cl_rrt ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(cl_rrt ${catkin_EXPORTED_TARGETS})
 
 add_executable(RRT_planner src/RRT_planner.cpp)
-target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
+target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS})
 
 add_executable(CL_RRT_test src/CL_RRT_test.cpp)
-target_link_libraries(CL_RRT_test cl_rrt ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${OMPL_LIBRARIES})
+target_link_libraries(CL_RRT_test cl_rrt ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(CL_RRT_test ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS cl_rrt
@@ -79,3 +79,4 @@ install(
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
   FILES_MATCHING PATTERN "*.h"
 )
+

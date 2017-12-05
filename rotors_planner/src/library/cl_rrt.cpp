@@ -2,9 +2,16 @@
 #include <ompl/base/goals/GoalSampleableRegion.h>
 #include <ompl/tools/config/SelfConfig.h>
 #include <limits>
+#include <ompl/control/planners/PlannerIncludes.h>
+#include <ompl/datastructures/NearestNeighbors.h>
+#include <ompl/base/goals/GoalState.h>
+#include <functional>
 
 namespace rotors_planner {
 
+namespace ob = ompl::base;
+namespace og = ompl::geometric;
+namespace oc = ompl::control;
 
 CL_rrt::CL_rrt(const oc::SpaceInformationPtr &si) : ob::Planner(si,"CL_rrt")
 {
@@ -36,6 +43,9 @@ void CL_rrt::clear()
 void CL_rrt::setup()
 {
   Planner::setup();
+  if(goal_solve)
+    goal_solve = false;
+
   if (!nn_)
     nn_.reset(ompl::tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
 

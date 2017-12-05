@@ -28,8 +28,14 @@
 #include <ompl/base/StateSpaceTypes.h>
 
 
+#include <fcl/config.h>
+#include <fcl/geometry/octree/octree.h>
+#include <fcl/geometry/shape/box.h>
+#include <fcl/broadphase/broadphase_collision_manager.h>
+#include <fcl/narrowphase/collision.h>
+#include <fcl/fcl.h>
 
-//#include <fcl/common/detail/profiler.h>
+
 #include <iostream>
 #include <cstring>
 #include <boost/filesystem.hpp>
@@ -38,6 +44,7 @@
 #include <rotors_control/parameters_ros.h>
 #include <rotors_control/lee_position_controller.h>
 
+#include <Eigen/Dense>
 
 #define pi 3.1415926
 
@@ -138,25 +145,52 @@ bool Lee_controller(rotors_control::LeePositionController lee_position_controlle
    output->as<oc::RealVectorControlSpace::ControlType>()->values[2] = (*rotor_velocities)(2);
    output->as<oc::RealVectorControlSpace::ControlType>()->values[3] = (*rotor_velocities)(3);
 
+   delete rotor_velocities;
+
 }
 
-bool isStateValid(const oc::SpaceInformation *si, const ob::State *state)
+bool isStateValid(const oc::SpaceInformation *si, const octomap::OcTree *octree_, const ob::State *state)
 {
-//    //    ob::ScopedState<ob::SE2StateSpace>
-//    // cast the abstract state type to the type we expect
-//    const ob::SE2StateSpace::StateType *se2state = state->as<ob::SE2StateSpace::StateType>();
+  // extract the position and construct the UAV box
+  const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
+  Eigen::Map<Eigen::Vector3d> current_angular(s.as<ob::RealVectorStateSpace::StateType>(0)->values);
+  Eigen::Map<Eigen::Vector3d> current_position(s.as<ob::RealVectorStateSpace::StateType>(1)->values);
+  std::cout <<"current position X:" <<current_position(0) <<"Y: "<<current_position(1)<<"Z: "<<current_position(2)<<std::endl;
+  //fcl::Box uav_box(0.3,0.3,0.3);
+  //std::shared_ptr<fcl::Box<float>> uav_box(new fcl::Box<float>(0.1,0.1,0.1));
+  std::shared_ptr<fcl::CollisionGeometry<float>> boxGeometry (new fcl::Box<float> (0.1, 0.1, 0.1));
+//  fcl::BVHModel<fcl::OBBRSS<float>> uav_model;
+//  fcl::BVHModel<fcl::OBBRSS<float>> *uav_model_ptr = &uav_model;
+  fcl::Matrix3f R;
+  R = Eigen::AngleAxisd(current_angular[0], Eigen::Vector3d::UnitZ())
+      * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
+      * Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitX());
+  // Eigen::Map<Eigen::Matrix<float, 3, 1>> current_pos(current_position);
+  //fcl::generateBVHModel(uav_model, uav_box, fcl::Transform3f(R, current_position));
+  fcl::Transform3f tf(R, current_position);
+  fcl::CollisionObjectf* uav_obj = new fcl::CollisionObjectf(boxGeometry, tf);
 
-//    // extract the first component of the state and cast it to what we expect
-//    const ob::RealVectorStateSpace::StateType *pos = se2state->as<ob::RealVectorStateSpace::StateType>(0);
+  fcl::OcTree<float>* tree = new fcl::OcTree<float>(std::shared_ptr<const octomap::OcTree>(octree_));
+  std::shared_ptr<fcl::CollisionGeometry<float>> tree_ptr(tree);
 
-//    // extract the second component of the state and cast it to what we expect
-//    const ob::SO2StateSpace::StateType *rot = se2state->as<ob::SO2StateSpace::StateType>(1);
-
-//    // check validity of state defined by pos & rot
+  //fcl::Transform3f tf2(Eigen::Vector3f::Zeros(), Eigen::MatrixXf::Identity(3,3));
+  fcl::CollisionObjectf* env_obj = new fcl::CollisionObjectf(tree_ptr, fcl::Transform3f::Identity());
 
 
-//    // return a value that is always true but uses the two variables we define, so we avoid compiler warnings
-//    return si->satisfiesBounds(state) && (const void*)rot != (const void*)pos;
+
+
+  //fcl::BroadPhaseCollisionManager* manager1 = new fcl::DynamicAABBTreeCollisionManager(); //represent octomap
+  //fcl::BroadPhaseCollisionManager* manager2 = new fcl::DynamicAABBTreeCollisionManager();
+
+  fcl::CollisionRequest<float> request;
+  fcl::CollisionResult<float> result;
+  request.num_max_contacts = 5;
+
+  fcl::collide(env_obj, uav_obj, request, result);
+
+  return !result.isCollision();
+
+
 }
 
 
@@ -266,7 +300,15 @@ int main(int argc, char **argv)
   oc::SpaceInformationPtr si(new oc::SpaceInformation(stateSpace, cspace));
 
   // set state validity checking for this space
-  si->setStateValidityChecker(std::bind(&isStateValid, si.get(),  std::placeholders::_1));
+  octomap::OcTree *octomap_;
+  std::string octo_file ;
+
+  if (argc == 2 ) {
+    octo_file = argv[1];
+    ROS_INFO("read octomap file: %s", argv[1]);
+  }
+  octomap_ = new octomap::OcTree(octo_file);
+  si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, std::placeholders::_1));
 
   // set the state propagation routine
   si->setStatePropagator(std::bind(&Quadrotorpropagate, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
