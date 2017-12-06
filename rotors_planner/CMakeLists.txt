@@ -3,6 +3,10 @@ project(rotors_planner)
 
 add_definitions(-std=c++11)
 
+set(CMAKE_MODULE_PATH
+    "${CMAKE_MODULE_PATH}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
+
 find_package(catkin REQUIRED COMPONENTS
     cmake_modules
     gazebo_msgs
@@ -15,8 +19,10 @@ find_package(catkin REQUIRED COMPONENTS
     )
 
 
-find_package(Eigen REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(ompl REQUIRED)
+find_package(FCL REQUIRED)
+find_package(CCD REQUIRED)
 # find_package(octomap REQUIRED)
 
 
@@ -27,17 +33,18 @@ find_package(ompl REQUIRED)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-    INCLUDE_DIRS include ${Eigen_INCLUDE_DIRS}
+    INCLUDE_DIRS include ${EIGEN3_INCLUDE_DIRS}
     LIBRARIES cl_rrt
     CATKIN_DEPENDS gazebo_msgs geometry_msgs mav_msgs roscpp sensor_msgs rotors_comm rotors_control
-    DEPENDS Eigen
 )
 
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
-  ${Eigen_INCLUDE_DIRS}
+  ${EIGEN_INCLUDE_DIRS}
   ${OMPL_INCLUDE_DIRS}
+  ${FCL_INCLUDE_DIR}
+  ${CCD_INCLUDE_DIRS}
   #${OCTOMAP_LIBRARIES}
 
 )
@@ -60,8 +67,14 @@ add_executable(RRT_planner src/RRT_planner.cpp)
 target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS})
 
+
+
 add_executable(CL_RRT_test src/CL_RRT_test.cpp)
-target_link_libraries(CL_RRT_test cl_rrt ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
+target_link_libraries(CL_RRT_test cl_rrt 
+    ${catkin_LIBRARIES} 
+    ${OMPL_LIBRARIES} 
+    ${FCL_LIBRARIES}
+    ${CCD_LIBRARIES})
 add_dependencies(CL_RRT_test ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS cl_rrt
