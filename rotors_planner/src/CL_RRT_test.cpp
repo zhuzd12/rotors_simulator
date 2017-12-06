@@ -167,7 +167,11 @@ bool isStateValid(const oc::SpaceInformation *si, const octomap::OcTree *octree_
       * Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitX());
   // Eigen::Map<Eigen::Matrix<float, 3, 1>> current_pos(current_position);
   //fcl::generateBVHModel(uav_model, uav_box, fcl::Transform3f(R, current_position));
-  fcl::Transform3f tf(R, current_position);
+  //fcl::Transform3f tf(R, current_position);
+  fcl::Transform3f tf;
+  tf.setIdentity();
+  tf.linear() = R;
+  tf.translation() = current_position;
   fcl::CollisionObjectf* uav_obj = new fcl::CollisionObjectf(boxGeometry, tf);
 
   fcl::OcTree<float>* tree = new fcl::OcTree<float>(std::shared_ptr<const octomap::OcTree>(octree_));
