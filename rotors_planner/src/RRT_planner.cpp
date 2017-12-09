@@ -327,7 +327,7 @@ int main(int argc, char **argv)
   }
   ob::PathPtr path;
   env.getsolution(path);
-  ROS_INFO("Start publishingtrajectory_pub planned trajectory.");
+  ROS_INFO("Start publishing trajectory_pub planned trajectory.");
 
   env.recordSolution();
   std::vector<WaypointWithTime> waypoints = env.waypoints;

@@ -3,6 +3,7 @@
 
 #include <ompl/control/planners/PlannerIncludes.h>
 #include <ompl/datastructures/NearestNeighbors.h>
+#include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/base/goals/GoalState.h>
 #include <functional>
 
@@ -71,7 +72,27 @@ public:
     setup();
   }
 
+  void setController(const ControllerFn &svc)
+  {
+    Controlfn_ = svc;
+  }
+
+  bool propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result, std::vector<oc::Control *> &control_result) const;
+
+  bool provideControl(const ob::State *state, const ob::State *heading_state,  oc::Control *control)
+  {
+    return Controlfn_(state, heading_state, control);
+  }
+
+  const ControllerFn& getController() const
+  {
+    return Controlfn_;
+  }
+
+
+
 protected:
+
   class Motion
   {
   public:
@@ -92,23 +113,6 @@ protected:
     Motion *parent{nullptr};
   };
 
-  bool provideControl(const ob::State *state, const ob::State *heading_state,  oc::Control *control)
-  {
-    return Controlfn_(state, heading_state, control);
-  }
-
-  void setController(const ControllerFn &svc)
-  {
-    Controlfn_ = svc;
-  }
-
-  const ControllerFn& getController() const
-  {
-    return Controlfn_;
-  }
-
-  bool propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result) const;
-
   void freeMemory();
 
   double distanceFunction(const Motion *a, const Motion *b) const
@@ -120,7 +124,7 @@ protected:
   const oc::SpaceInformation *siC_;
   std::shared_ptr<ompl::NearestNeighbors<Motion *>> nn_;
   double goalBias_{.05};
-  double maxDistance_{0.};
+  double maxDistance_{100.};
   //double global_low_bound{std::numeric_limits<double>::infinity()};
   ompl::RNG rng_;
   Motion *lastGoalMotion_{nullptr};
@@ -128,7 +132,6 @@ protected:
   // double nearst_radius{50};
   bool goal_solve{false};
   double path_deviation{.1};
-protected:
   ControllerFn Controlfn_;
 
 };
