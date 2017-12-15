@@ -17,6 +17,32 @@ namespace oc = ompl::control;
 
 typedef std::function<bool(const ob::State *, const ob::State *, oc::Control *)> ControllerFn;
 
+class Motion
+{
+public:
+  Motion() = default;
+
+  Motion(const oc::SpaceInformation *si)
+    : state(si->allocState()),control(si->allocControl())
+  {
+  }
+
+  ~Motion() = default;
+//    ~Motion()
+//    {
+//      siC_->freeControl(control);
+//      si_->freeState(state);
+//    }
+
+  ob::State *state{nullptr};
+  oc::Control *control{nullptr};
+  unsigned int steps{0};
+  double low_bound{0.0};
+  // double up_bound(0.0);
+  Motion *parent{nullptr};
+  std::vector<Motion *> children;
+};
+
 class CL_rrt : public ob::Planner
 {
 public:
@@ -29,6 +55,15 @@ public:
   void getPlannerData(ob::PlannerData &data) const override;
 
   ob::PlannerStatus solve(const ob::PlannerTerminationCondition &ptc) override;
+
+  ob::PlannerStatus loop_solve(const ob::PlannerTerminationCondition &ptc, const ob::State *current_state);
+
+  bool prune(Motion *new_root);
+
+  std::vector<Motion *> get_solution_motions()
+  {
+    return solution_path;
+  }
 
   void clear() override;
 
@@ -90,29 +125,7 @@ public:
   }
 
 
-
 protected:
-
-  class Motion
-  {
-  public:
-    Motion() = default;
-
-    Motion(const oc::SpaceInformation *si)
-      : state(si->allocState()),control(si->allocControl())
-    {
-    }
-
-    ~Motion() = default;
-
-    ob::State *state{nullptr};
-    oc::Control *control{nullptr};
-    unsigned int steps{0};
-    double low_bound{0.0};
-    // double up_bound(0.0);
-    Motion *parent{nullptr};
-  };
-
   void freeMemory();
 
   double distanceFunction(const Motion *a, const Motion *b) const
@@ -125,10 +138,13 @@ protected:
   std::shared_ptr<ompl::NearestNeighbors<Motion *>> nn_;
   double goalBias_{.05};
   double maxDistance_{100.};
+  double minDistance_{1.0};
+  double deltaT{1.0};
   //double global_low_bound{std::numeric_limits<double>::infinity()};
   ompl::RNG rng_;
   Motion *lastGoalMotion_{nullptr};
-  //ob::State *current_state{nullptr};
+  std::vector<Motion *> solution_path;
+  Motion *current_root{nullptr};
   // double nearst_radius{50};
   bool goal_solve{false};
   double path_deviation{.1};

@@ -5,6 +5,7 @@
 #include <mav_msgs/eigen_mav_msgs.h>
 #include <sensor_msgs/Imu.h>
 #include <trajectory_msgs/MultiDOFJointTrajectory.h>
+#include <visualization_msgs/Marker.h>
 
 // octomap library header
 #include <octomap/octomap_utils.h>
@@ -23,6 +24,7 @@
 #include <ompl/control/SpaceInformation.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
+#include <ompl/control/ODESolver.h>
 #include <boost/math/constants/constants.hpp>
 #include <ompl/base/StateSpaceTypes.h>
 
@@ -63,7 +65,7 @@ double angluar_normalization(double angular)
 
 void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_, const oc::SpaceInformationPtr si, const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
 {
-    static double timestep = .001;
+    static double timestep = .01;
     int nsteps = ceil(duration / timestep);
     double dt = duration / nsteps;
 
@@ -98,11 +100,20 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
           0.0, cos(Angular.values[0]), sin(Angular.values[0])*cos(Angular.values[1]),
           0.0,  -sin(Angular.values[0]), cos(Angular.values[0])*cos(Angular.values[1]);
       Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;*/
+//      Eigen::Matrix3d T_be;
+//      T_be<< cos(Angular.values[1]), 0.0, -cos(Angular.values[0])*sin(Angular.values[1]),
+//          0.0, 1, sin(Angular.values[0]),
+//          sin(Angular.values[1]),  0.0, cos(Angular.values[0])*cos(Angular.values[1]);
+//      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;
       Eigen::Vector3d T_eb_pqr = T_eb * angular_vel_vector;
 
       Angular.values[0] = angluar_normalization(Angular.values[0] + T_eb_pqr(0) * dt);
       Angular.values[1] = angluar_normalization(Angular.values[1] + T_eb_pqr(1) * dt);
       Angular.values[2] = angluar_normalization(Angular.values[2] + T_eb_pqr(2) * dt);
+
+//      Angular.values[0] = angluar_normalization(Angular.values[0] + Angular_vel.values[0] * dt);
+//      Angular.values[1] = angluar_normalization(Angular.values[1] + Angular_vel.values[1] * dt);
+//      Angular.values[2] = angluar_normalization(Angular.values[2] + Angular_vel.values[2] * dt);
 
       velocity.values[0] = velocity.values[0] + dt * U[3] * (cos(Angular.values[0]) * cos(Angular.values[2]) * sin(Angular.values[1])
           + sin(Angular.values[0]) * sin(Angular.values[2])) / vehicle_parameters_.mass_;
@@ -112,6 +123,13 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
 
       velocity.values[2] = velocity.values[2] + dt * (U[3] * cos(Angular.values[0]) * cos(Angular.values[1])/vehicle_parameters_.mass_ - vehicle_parameters_.gravity_);
 
+//      double temp1 = Angular_vel[1] * Angular_vel[2] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
+//          + U[0]/vehicle_parameters_.inertia_(0,0);
+//      double temp2 = Angular_vel[0] * Angular_vel[2] * (vehicle_parameters_.inertia_(2,2) - vehicle_parameters_.inertia_(0,0))/vehicle_parameters_.inertia_(1,1)
+//          + U[1]/vehicle_parameters_.inertia_(1,1);
+//      double temp3 = Angular_vel[0] * Angular_vel[1] * (vehicle_parameters_.inertia_(0,0) - vehicle_parameters_.inertia_(1,1))/vehicle_parameters_.inertia_(2,2)
+//          + U[2]/vehicle_parameters_.inertia_(2,2);
+      \
       Angular_vel[0] = Angular_vel[0] + dt * (Angular_vel[1] * Angular_vel[2] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
           + U[0]/vehicle_parameters_.inertia_(0,0));
 
@@ -126,6 +144,45 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
 
     }
 }
+
+void QuadrotorODE(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_,const oc::ODESolver::StateType& q, const oc::Control* u, oc::ODESolver::StateType& qdot)
+{
+  double *input_rotors_control = u->as<oc::RealVectorControlSpace::ControlType>()->values;
+  Eigen::Map<Eigen::Vector4d> U(input_rotors_control);
+  for (int k=0; k<4; ++k)
+  {
+    U(k) = U(k) * U(k);
+  }
+  U = allocation_matrix * U;
+
+//  qdot[0] = q[9] + sin(q[0])*tan(q[1])*q[10] + cos(q[0])*tan(q[1])*q[11];
+//  qdot[1] = cos(q[0])*q[10] - sin(q[0])*q[11];
+//  qdot[2] = q[10]*sin(q[0])/cos(q[1]) + q[11]*cos(q[0])/cos(q[1]);
+  qdot[0] = q[9];
+  qdot[1] = q[10];
+  qdot[2] = q[11];
+
+  qdot[3] = q[6];
+  qdot[4] = q[7];
+  qdot[5] = q[8];
+
+  qdot[6] = U[3] * (cos(q[0]) * cos(q[2]) * sin(q[1])
+      + sin(q[0]) * sin(q[2])) / vehicle_parameters_.mass_;
+
+  qdot[7] = U[3] * (cos(q[0]) * sin(q[2]) * sin(q[1])
+      - sin(q[0]) * cos(q[2])) / vehicle_parameters_.mass_;
+
+  qdot[8] = U[3] * cos(q[0]) * cos(q[1])/vehicle_parameters_.mass_ - vehicle_parameters_.gravity_;
+
+  qdot[9] = q[10] * q[11] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
+      + U[0]/vehicle_parameters_.inertia_(0,0);
+  qdot[10] = q[9] * q[11] * (vehicle_parameters_.inertia_(2,2) - vehicle_parameters_.inertia_(0,0))/vehicle_parameters_.inertia_(1,1)
+      + U[1]/vehicle_parameters_.inertia_(1,1);
+  qdot[11] = q[9] * q[10] * (vehicle_parameters_.inertia_(0,0) - vehicle_parameters_.inertia_(1,1))/vehicle_parameters_.inertia_(2,2)
+      + U[2]/vehicle_parameters_.inertia_(2,2);
+
+}
+
 
 
 /* define the controller fucntion */
@@ -167,7 +224,7 @@ bool Lee_controller(rotors_control::LeePositionController lee_position_controlle
 
    trajectory_point.position_W = position;
    trajectory_point.setFromYaw(yaw);
-   trajectory_point.time_from_start_ns = 0;
+   //trajectory_point.time_from_start_ns = 0;
    lee_position_controller_.SetOdometry(odometry_);
    lee_position_controller_.SetTrajectoryPoint(trajectory_point);
    lee_position_controller_.CalculateRotorVelocities(rotor_velocities);
@@ -372,7 +429,7 @@ int main(int argc, char **argv)
   // set the bounds for the control space
   ob::RealVectorBounds cbounds(4);
   cbounds.setLow(0.0);
-  cbounds.setHigh(1200);
+  cbounds.setHigh(1600);
   cspace->as<oc::RealVectorControlSpace>()->setBounds(cbounds);
 
   // construct an instance of  space information from this control space
@@ -437,8 +494,8 @@ int main(int argc, char **argv)
   else
     std::cout << "simple check result: invalid state" <<std::endl;
 
-  }  */
-
+  }
+  */
 
   check_position[0] = 0.0;
   check_position[1] = 0.0;
@@ -447,6 +504,9 @@ int main(int argc, char **argv)
   // set the state propagation routine
   si->setStatePropagator(std::bind(&Quadrotorpropagate, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
           std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+//  ompl::control::ODESolverPtr odeSolver (new oc::ODEBasicSolver<> (si, std::bind(&QuadrotorODE, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, std::placeholders::_1,
+//                                                                                             std::placeholders::_2, std::placeholders::_3)));
+//  si->setStatePropagator(oc::ODESolver::getStatePropagator(odeSolver));
   si->setPropagationStepSize(0.05);
   si->setMinMaxControlDuration(1, 10);
   si->setStateValidityCheckingResolution(0.25);
@@ -459,7 +519,7 @@ int main(int argc, char **argv)
   double *heading_position = hs.as<ob::RealVectorStateSpace::StateType>(1)->values;
   double *heading_velocity = hs.as<ob::RealVectorStateSpace::StateType>(2)->values;
   double *heading_angular_vel = hs.as<ob::RealVectorStateSpace::StateType>(3)->values;
-  heading_angular[0] = 0.0; heading_angular[1] = 0.0; heading_angular[2] = 0.0;
+  heading_angular[0] = 0.0; heading_angular[1] = 0.0; heading_angular[2] = 0;
   heading_position[0] = 2.0; heading_position[1] = -27.0; heading_position[2] = 15.0;
   heading_velocity[0] = 0.0; heading_velocity[1] = 0.0; heading_velocity[2] = 0.0;
   heading_angular_vel[0] = 0.0; heading_angular_vel[1] = 0.0; heading_angular_vel[2] = 0.0;
@@ -491,25 +551,51 @@ int main(int argc, char **argv)
   // print the problem settings
   pdef->print(std::cout);
 
+
   // attempt to solve the problem within one second of planning time
-  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(500.0);
+  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(10.0);
   ob::PlannerStatus solved = planner->solve(ptc);
 
   if (solved)
       {
           // get the goal representation from the problem definition (not the same as the goal state)
           // and inquire about the found path
-          ob::PathPtr path = pdef->getSolutionPath();
-          std::cout << "Found solution:" << std::endl;
+          //ob::PathPtr path = pdef->getSolutionPath();
+          //std::cout << "Found solution:" << std::endl;
 
           // print the path to screen
-          path->print(std::cout);
+          //path->print(std::cout);
+          std::cout<<"first loop find solution"<<std::endl;
       }
    else
       std::cout << "No solution found" << std::endl;
+  std::vector<rotors_planner::Motion *> solution_path;
+  solution_path = planner->get_solution_motions();
+  int index = solution_path.size()- 100;
+  std::cout<<"solution states: "<<solution_path.size()<<std::endl;
+  std::cout<<"new current state index: "<<index<<std::endl;
+  ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
+  /*
+  solved = planner->loop_solve(ptc2, solution_path[index]->state);
+  if (solved)
+      {
+          // get the goal representation from the problem definition (not the same as the goal state)
+          // and inquire about the found path
+         // ob::PathPtr path = pdef->getSolutionPath();
+          std::cout << "Found solution:" << std::endl;
+
+          // print the path to screen
+          //path->print(std::cout);
+
+      }
+   else
+      std::cout << "No solution found" << std::endl;
+  */
 
   /*
-  if(planner->propagateuntilstop(check_state, heading_state, pstates))
+  std::vector<ob::State *> pstates;
+  std::vector<oc::Control *> pcontrols;
+  if(planner->propagateuntilstop(check_state, heading_state, pstates, pcontrols))
   {
     size_t p = 0;
     for(; p < pstates.size(); ++p)
@@ -518,7 +604,8 @@ int main(int argc, char **argv)
       std::cout<<p<<" state position: "<<ps->as<ob::RealVectorStateSpace::StateType>(1)->values[0] <<" "
               << ps->as<ob::RealVectorStateSpace::StateType>(1)->values[1] <<" " <<ps->as<ob::RealVectorStateSpace::StateType>(1)->values[2]<<std::endl;
     }
-  } */
+  }
+  */
   /*
   // create a start state
   ob::ScopedState<ob::RealVectorStateSpace> start(stateSpace);
@@ -564,6 +651,34 @@ int main(int argc, char **argv)
 
    */
 
+  /* rviz interface */
+  ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
+  visualization_msgs::Marker line_strip;
+  line_strip.header.frame_id = "/world";
+  line_strip.ns = "planning_trajectory";
+  line_strip.action = visualization_msgs::Marker::ADD;
+  line_strip.pose.orientation.w = 1.0;
+
+  line_strip.id = 1;
+  line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+
+  line_strip.scale.x = 0.1;
+  line_strip.color.b = 1.0;
+  line_strip.color.a = 1.0;
+
+  for(int i = solution_path.size()-1; i >= 0; --i)
+  {
+    ob::CompoundStateSpace::StateType& ps = *solution_path[i]->state->as<ob::CompoundStateSpace::StateType>();
+    double *point_position = ps.as<ob::RealVectorStateSpace::StateType>(1)->values;
+    geometry_msgs::Point p;
+    p.x = point_position[0];
+    p.y = point_position[1];
+    p.z = point_position[2];
+    std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
+    line_strip.points.push_back(p);
+  }
+
+  OMPL_INFORM("test point 4");
 
 
   ros::spinOnce();
@@ -574,6 +689,8 @@ int main(int argc, char **argv)
   ros::Rate rate(10);
   while(ros::ok()){
     octomap_pub.publish(octo_msg);
+    marker_pub.publish(line_strip);
+
     rate.sleep();
   }
   //octomap_->read(octo_file);
