@@ -83,11 +83,21 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
     ob::RealVectorStateSpace::StateType& Angular_vel = *s.as<ob::RealVectorStateSpace::StateType>(3);
 
     si->getStateSpace()->copyState(result, start);
+
+
     for(int i=0; i<nsteps; i++)
     {
       Position.values[0] = Position.values[0] + velocity.values[0] * dt;
       Position.values[1] = Position.values[1] + velocity.values[1] * dt;
       Position.values[2] = Position.values[2] + velocity.values[2] * dt;
+
+      velocity.values[0] = velocity.values[0] + dt * U[3] * (cos(Angular.values[0]) * cos(Angular.values[2]) * sin(Angular.values[1])
+          + sin(Angular.values[0]) * sin(Angular.values[2])) / vehicle_parameters_.mass_;
+
+      velocity.values[1] = velocity.values[1] + dt * U[3] * (cos(Angular.values[0]) * sin(Angular.values[2]) * sin(Angular.values[1])
+          - sin(Angular.values[0]) * cos(Angular.values[2])) / vehicle_parameters_.mass_;
+
+      velocity.values[2] = velocity.values[2] + dt * (U[3] * cos(Angular.values[0]) * cos(Angular.values[1])/vehicle_parameters_.mass_ - vehicle_parameters_.gravity_);
 
       Eigen::Matrix3d T_eb;
       T_eb<< 1.0, sin(Angular.values[0])*tan(Angular.values[1]), cos(Angular.values[0])*tan(Angular.values[1]),
@@ -99,50 +109,44 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
       T_be<< 1.0, 0.0, -sin(Angular.values[1]),
           0.0, cos(Angular.values[0]), sin(Angular.values[0])*cos(Angular.values[1]),
           0.0,  -sin(Angular.values[0]), cos(Angular.values[0])*cos(Angular.values[1]);
-      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;*/
-//      Eigen::Matrix3d T_be;
-//      T_be<< cos(Angular.values[1]), 0.0, -cos(Angular.values[0])*sin(Angular.values[1]),
-//          0.0, 1, sin(Angular.values[0]),
-//          sin(Angular.values[1]),  0.0, cos(Angular.values[0])*cos(Angular.values[1]);
-//      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;
+      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;
+      Eigen::Matrix3d T_be;
+      T_be<< cos(Angular.values[1]), 0.0, -cos(Angular.values[0])*sin(Angular.values[1]),
+          0.0, 1, sin(Angular.values[0]),
+          sin(Angular.values[1]),  0.0, cos(Angular.values[0])*cos(Angular.values[1]);
+      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;  */
       Eigen::Vector3d T_eb_pqr = T_eb * angular_vel_vector;
 
       Angular.values[0] = angluar_normalization(Angular.values[0] + T_eb_pqr(0) * dt);
       Angular.values[1] = angluar_normalization(Angular.values[1] + T_eb_pqr(1) * dt);
       Angular.values[2] = angluar_normalization(Angular.values[2] + T_eb_pqr(2) * dt);
 
-//      Angular.values[0] = angluar_normalization(Angular.values[0] + Angular_vel.values[0] * dt);
-//      Angular.values[1] = angluar_normalization(Angular.values[1] + Angular_vel.values[1] * dt);
-//      Angular.values[2] = angluar_normalization(Angular.values[2] + Angular_vel.values[2] * dt);
+      /*
+      Angular.values[0] = angluar_normalization(Angular.values[0] + Angular_vel.values[0] * dt);
+      Angular.values[1] = angluar_normalization(Angular.values[1] + Angular_vel.values[1] * dt);
+      Angular.values[2] = angluar_normalization(Angular.values[2] + Angular_vel.values[2] * dt);  */
 
-      velocity.values[0] = velocity.values[0] + dt * U[3] * (cos(Angular.values[0]) * cos(Angular.values[2]) * sin(Angular.values[1])
-          + sin(Angular.values[0]) * sin(Angular.values[2])) / vehicle_parameters_.mass_;
 
-      velocity.values[1] = velocity.values[1] + dt * U[3] * (cos(Angular.values[0]) * sin(Angular.values[2]) * sin(Angular.values[1])
-          - sin(Angular.values[0]) * cos(Angular.values[2])) / vehicle_parameters_.mass_;
+      double temp1 = Angular_vel[1] * Angular_vel[2] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
+          + U[0]/vehicle_parameters_.inertia_(0,0);
+      double temp2 = Angular_vel[0] * Angular_vel[2] * (vehicle_parameters_.inertia_(2,2) - vehicle_parameters_.inertia_(0,0))/vehicle_parameters_.inertia_(1,1)
+          + U[1]/vehicle_parameters_.inertia_(1,1);
+      double temp3 = Angular_vel[0] * Angular_vel[1] * (vehicle_parameters_.inertia_(0,0) - vehicle_parameters_.inertia_(1,1))/vehicle_parameters_.inertia_(2,2)
+          + U[2]/vehicle_parameters_.inertia_(2,2);
 
-      velocity.values[2] = velocity.values[2] + dt * (U[3] * cos(Angular.values[0]) * cos(Angular.values[1])/vehicle_parameters_.mass_ - vehicle_parameters_.gravity_);
+      Angular_vel[0] = Angular_vel[0] + dt * temp1;
 
-//      double temp1 = Angular_vel[1] * Angular_vel[2] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
-//          + U[0]/vehicle_parameters_.inertia_(0,0);
-//      double temp2 = Angular_vel[0] * Angular_vel[2] * (vehicle_parameters_.inertia_(2,2) - vehicle_parameters_.inertia_(0,0))/vehicle_parameters_.inertia_(1,1)
-//          + U[1]/vehicle_parameters_.inertia_(1,1);
-//      double temp3 = Angular_vel[0] * Angular_vel[1] * (vehicle_parameters_.inertia_(0,0) - vehicle_parameters_.inertia_(1,1))/vehicle_parameters_.inertia_(2,2)
-//          + U[2]/vehicle_parameters_.inertia_(2,2);
-      \
-      Angular_vel[0] = Angular_vel[0] + dt * (Angular_vel[1] * Angular_vel[2] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
-          + U[0]/vehicle_parameters_.inertia_(0,0));
+      Angular_vel[1] = Angular_vel[1] + dt * temp2;
 
-      Angular_vel[1] = Angular_vel[1] + dt * (Angular_vel[0] * Angular_vel[2] * (vehicle_parameters_.inertia_(2,2) - vehicle_parameters_.inertia_(0,0))/vehicle_parameters_.inertia_(1,1)
-          + U[1]/vehicle_parameters_.inertia_(1,1));
-
-      Angular_vel[2] = Angular_vel[2] + dt * (Angular_vel[0] * Angular_vel[1] * (vehicle_parameters_.inertia_(0,0) - vehicle_parameters_.inertia_(1,1))/vehicle_parameters_.inertia_(2,2)
-          + U[2]/vehicle_parameters_.inertia_(2,2));
+      Angular_vel[2] = Angular_vel[2] + dt * temp3;
 
       if(!si->satisfiesBounds(result))
+      {
         return;
+      }
 
     }
+
 }
 
 void QuadrotorODE(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_,const oc::ODESolver::StateType& q, const oc::Control* u, oc::ODESolver::StateType& qdot)
@@ -218,7 +222,7 @@ bool Lee_controller(rotors_control::LeePositionController lee_position_controlle
    //std::cout<<"orientation : "<<orientation.w()<<" "<<orientation.x()<<" "<<orientation.y()<<" "<<orientation.z()<<std::endl;
    odometry_.position = current_position;
    odometry_.orientation = orientation;
-   odometry_.velocity = current_velocity;
+   odometry_.velocity = Rx.inverse()*current_velocity;
    odometry_.angular_velocity = current_angular_vel;
    Eigen::VectorXd *rotor_velocities = new(Eigen::VectorXd);
 
@@ -394,7 +398,7 @@ int main(int argc, char **argv)
   //ob::StateSpacePtr stateSpace = SO3 + POS + velocity + angular_vel;
 
   std::shared_ptr<ob::CompoundStateSpace> stateSpace(new ob::CompoundStateSpace());
-  stateSpace->addSubspace(SO3, 0.0);
+  stateSpace->addSubspace(SO3, 1.0);
   stateSpace->addSubspace(POS, 1.0);
   stateSpace->addSubspace(velocity, 0.0);
   stateSpace->addSubspace(angular_vel, 0.0);
@@ -519,7 +523,7 @@ int main(int argc, char **argv)
   double *heading_position = hs.as<ob::RealVectorStateSpace::StateType>(1)->values;
   double *heading_velocity = hs.as<ob::RealVectorStateSpace::StateType>(2)->values;
   double *heading_angular_vel = hs.as<ob::RealVectorStateSpace::StateType>(3)->values;
-  heading_angular[0] = 0.0; heading_angular[1] = 0.0; heading_angular[2] = 0;
+  heading_angular[0] = 0.0; heading_angular[1] = 0.0; heading_angular[2] = 0.0;
   heading_position[0] = 2.0; heading_position[1] = -27.0; heading_position[2] = 15.0;
   heading_velocity[0] = 0.0; heading_velocity[1] = 0.0; heading_velocity[2] = 0.0;
   heading_angular_vel[0] = 0.0; heading_angular_vel[1] = 0.0; heading_angular_vel[2] = 0.0;
@@ -541,6 +545,7 @@ int main(int argc, char **argv)
   planner->setGoalBias(0.2);
   planner->setName("CL_RRT");
   planner->setPathdeviation(0.2);
+  planner->setPathresolution(0.25);
   planner->setRange(3);
   planner->setController(std::bind(&Lee_controller, lee_position_controller_, std::placeholders::_1, std::placeholders::_2,std::placeholders::_3));
   planner->setProblemDefinition(pdef);
@@ -550,22 +555,26 @@ int main(int argc, char **argv)
   si->printSettings(std::cout);
   // print the problem settings
   pdef->print(std::cout);
+//  ob::State *goal_state = pdef->getGoal()->as<ob::GoalState>()->getState();
+//  ob::CompoundStateSpace::StateType& goals = *goal_state->as<ob::CompoundStateSpace::StateType>();
+//  double *test_goal = goals.as<ob::RealVectorStateSpace::StateType>(1)->values;
+//  std::cout<<"goal_state: "<<test_goal[0]<<" "<<test_goal[1]<<" "<<test_goal[2]<<std::endl;
 
 
   // attempt to solve the problem within one second of planning time
-  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(10.0);
+  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(3.0);
   ob::PlannerStatus solved = planner->solve(ptc);
 
   if (solved)
       {
           // get the goal representation from the problem definition (not the same as the goal state)
           // and inquire about the found path
-          //ob::PathPtr path = pdef->getSolutionPath();
-          //std::cout << "Found solution:" << std::endl;
+         // ob::PathPtr path = pdef->getSolutionPath();
+          std::cout << "Found solution:" << std::endl;
 
           // print the path to screen
           //path->print(std::cout);
-          std::cout<<"first loop find solution"<<std::endl;
+          //std::cout<<"first loop find solution"<<std::endl;
       }
    else
       std::cout << "No solution found" << std::endl;
@@ -575,6 +584,8 @@ int main(int argc, char **argv)
   std::cout<<"solution states: "<<solution_path.size()<<std::endl;
   std::cout<<"new current state index: "<<index<<std::endl;
   ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
+
+
   /*
   solved = planner->loop_solve(ptc2, solution_path[index]->state);
   if (solved)
@@ -606,6 +617,7 @@ int main(int argc, char **argv)
     }
   }
   */
+
   /*
   // create a start state
   ob::ScopedState<ob::RealVectorStateSpace> start(stateSpace);
@@ -651,7 +663,9 @@ int main(int argc, char **argv)
 
    */
 
+
   /* rviz interface */
+
   ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
   visualization_msgs::Marker line_strip;
   line_strip.header.frame_id = "/world";
@@ -674,11 +688,10 @@ int main(int argc, char **argv)
     p.x = point_position[0];
     p.y = point_position[1];
     p.z = point_position[2];
-    std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
+   // std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
     line_strip.points.push_back(p);
   }
 
-  OMPL_INFORM("test point 4");
 
 
   ros::spinOnce();

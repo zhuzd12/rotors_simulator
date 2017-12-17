@@ -80,25 +80,30 @@ void CL_rrt::freeMemory()
 
 }
 
-bool CL_rrt::propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result, std::vector<oc::Control *> &control_result) const
+bool CL_rrt::propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result, std::vector<oc::Control *> &control_result, std::vector<double>& cum_distance,  std::vector<int>& cum_steps) const
 {
   OMPL_INFORM("propagate begins");
   double dv = std::numeric_limits<double>::infinity();
   int st = 0;
+  int st_loop = 0;
+  int steps = 0;
+  double distance_ = 0.0;
+
   oc::Control *rctrl = siC_->allocControl();
   ob::State *current_State = si_->allocState();
+  ob::State *future_State = si_->allocState();
   si_->copyState(current_State, state);
   while(dv >= path_deviation){
     Controlfn_(current_State, heading_state, rctrl);
-    control_result.resize(st +1);
-    control_result[st] = siC_->allocControl();
-    siC_->copyControl(control_result[st], rctrl);
+    //control_result.resize(st +1);
+    //control_result[st] = siC_->allocControl();
+    //siC_->copyControl(control_result[st], rctrl);
 //    std::cout<<"control output: "<<rctrl->as<oc::RealVectorControlSpace::ControlType>()->values[0]<<" "
 //            <<rctrl->as<oc::RealVectorControlSpace::ControlType>()->values[1]<<" "<<rctrl->as<oc::RealVectorControlSpace::ControlType>()->values[2]
 //           <<" "<<rctrl->as<oc::RealVectorControlSpace::ControlType>()->values[3]<<std::endl;
-    result.resize(st + 1);
-    result[st] = si_->allocState();
-    siC_->getStatePropagator()->propagate(current_State, rctrl, siC_->getPropagationStepSize(), result[st]);
+    //result.resize(st + 1);
+    //result[st] = si_->allocState();
+    siC_->getStatePropagator()->propagate(current_State, rctrl, siC_->getPropagationStepSize(), future_State);
 
     /*
     const ob::CompoundStateSpace::StateType *s = result[st]->as<ob::CompoundStateSpace::StateType>();
@@ -116,26 +121,58 @@ bool CL_rrt::propagateuntilstop(const ob::State *state, const ob::State *heading
              <<s->as<ob::RealVectorStateSpace::StateType>(3)->values[2]<<std::endl;
     */
 
-    if(!si_->isValid(result[st]))
+    if(!si_->isValid(future_State))
     {
-      si_->freeState(result[st]);
-      siC_->freeControl(control_result[st]);
-      result.resize(st);
-      control_result.resize(st);
+      si_->freeState(future_State);
+      si_->freeState(current_State);
+      //siC_->freeControl(control_result[st]);
+      //result.resize(st);
+      //control_result.resize(st);
       std::cout<<"invalid state "<<st<<std::endl;
       return false;
     }
     //std::cout<<"valid state "<<st<<std::endl;
-    si_->copyState(current_State, result[st]);
-    dv = si_->distance(result[st], heading_state);
+    distance_ = distance_ + si_->distance(current_State, future_State);
+    steps++;
+    dv = si_->distance(future_State, heading_state);
+//    std::cout<<"distance: "<<distance_<<std::endl;
+//    std::cout<<"steps: "<<steps<<std::endl;
+    if(distance_ >= path_resolution || dv < path_deviation)
+    {
+      st++;
+      control_result.resize(st);
+      result.resize(st);
+      control_result[st-1] = siC_->allocControl();
+      result[st-1] = si_->allocState();
+      siC_->copyControl(control_result[st-1], rctrl);
+      result[st-1] = si_->allocState();
+      si_->copyState(result[st-1], future_State);
+      cum_distance.resize(st);
+      cum_distance[st-1] = distance_;
+      cum_steps.resize(st);
+      cum_steps[st-1] = steps;
+
+      distance_ = 0.0;
+      steps = 0;
+
+    }
+
+
+    si_->copyState(current_State, future_State);
+    //si_->copyState(current_State, result[st]);
+    //dv = si_->distance(current_State, heading_state);
     //std::cout<<"distance: "<<dv<<std::endl;
-    ++st;
-    if(st > 100)
+    ++st_loop;
+    if(st_loop > 300)
     {
       OMPL_INFORM("propagate endless loop");
+      si_->freeState(current_State);
+      si_->freeState(future_State);
       return false;
     }
   }
+  si_->freeState(current_State);
+  si_->freeState(future_State);
   return true;
 }
 
@@ -143,7 +180,8 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
 {
   checkValidity();
   ob::Goal *goal = pdef_->getGoal().get();
-  // ob::State *goal_state = pdef_->getGoal()->as<ob::GoalState>()->getState();
+  ob::State *goal_state = pdef_->getGoal()->as<ob::GoalState>()->getState();
+  //std::cout<<std::endl;
   auto *goal_s = dynamic_cast <ob::GoalSampleableRegion *>(goal);
 
   while(const ob::State *st = pis_.nextStart())
@@ -152,6 +190,8 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
     si_->copyState(motion->state, st);
     siC_->nullControl(motion->control);
     nn_->add(motion);
+    motion->c_total = 0.0;
+    goal->isSatisfied(motion->state, &motion->low_bound);
     current_root = motion;
   }
 
@@ -201,7 +241,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
     }
 
     /* get controller output using Controller function */
-    while(!Controlfn_(nmotion->state, dstate, rctrl) || si_->distance(nmotion->state, dstate) < minDistance_)
+    while(!Controlfn_(nmotion->state, dstate, rctrl) || (!goal_solve && si_->distance(nmotion->state, dstate) < minDistance_))
     {
       // OMPL_DEBUG("invalid sample state");
       sampler_->sampleUniform(rstate);
@@ -228,7 +268,9 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
     si_->copyState(rmotion->state, dstate);
     std::vector<ob::State *> pstates;  // every expand loop, pstates point to the newly added tree nodes
     std::vector<oc::Control *> pcontrols;
-    if(propagateuntilstop(nmotion->state, rmotion->state, pstates, pcontrols))
+    std::vector<double> cum_distance;
+    std::vector<int> cum_steps;
+    if(propagateuntilstop(nmotion->state, rmotion->state, pstates, pcontrols, cum_distance, cum_steps))
     {
       OMPL_INFORM("propagate success");
       if(pstates.size() >= siC_->getMinControlDuration()){
@@ -237,36 +279,179 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
       bool solved = false;
       size_t p = 0;
       double dist = 0.0;
+     // Motion *inter_motion = new Motion();
+      /*
+      int inter_steps = 0;
+      double cum_distance[pstates.size()];
+      cum_distance[p] = si_->distance(pstates[p], nmotion);
+      for(; p < pstates.size(); ++p)
+      {
+        cum_distance[p] = cum_distance[p-1] + si_->distance(pstates[p], pstates[p-1]);
+      }
+      p = 0;
+      double last_cum_distance = 0.0;  */
       for(; p < pstates.size(); ++p)
       {
         auto *motion = new Motion();
         motion->state = pstates[p];
-        // we need multiple copies of rctrl
-       // motion->control = siC_->allocControl();
-        //siC_->copyControl(motion->control, pcontrols[p]);
         motion->control = pcontrols[p];
-        motion->steps = 1;
+        motion->steps = cum_steps[p];
+        motion->c_total = lastmotion->c_total + cum_distance[p];
         motion->parent = lastmotion;
-        //motion->low_bound = si_->distance(motion->state, goal_state);
-
+       // motion->low_bound = si_->distance(motion->state, goal_state);
 
         solved = goal->isSatisfied(motion->state, &dist);
-        if(solved)
-          goal_solve = true;
         motion->low_bound = dist;
-        lastmotion->children.push_back(motion);
-        lastmotion = motion;
-        nn_->add(motion);
-
-        if(motion->low_bound < approxdif)
+        if(solved)
         {
-          approxdif = dist;
-          solution = motion;  //we always have a solution, but it doesn't mean we haved arrived the goal state.
+          goal_solve = true;
+          motion->up_bound = motion->low_bound;
+         // back to root and update upper_bound
+          Motion *back_motion = motion;
+          Motion *father_motion = motion;
+          bool is_optimal = true;
+          while(back_motion->parent != nullptr)
+          {
+            father_motion = back_motion->parent;
+            if(father_motion->up_bound > back_motion->up_bound + back_motion->c_total - father_motion->c_total)
+            {
+              father_motion->up_bound = back_motion->up_bound + back_motion->c_total - father_motion->c_total;
+              back_motion = father_motion;
+            }
+            else
+            {
+              is_optimal = false;
+              break;
+            }
+          }
+          if(is_optimal)
+          {
+            solution = motion;
+          }
 
+
+          lastmotion->children.push_back(motion);
+          lastmotion = motion;
+          nn_->add(motion);
         }
 
-        /* for each newly added nodes form C_UB and add goal node to tree */
+        else
+        {
+          std::vector<ob::State *> togo_states;
+          std::vector<oc::Control *> togo_controls;
+          std::vector<double> togo_distance;
+          std::vector<int> togo_steps;
+          if(propagateuntilstop(motion->state, goal_state, togo_states, togo_controls, togo_distance, togo_steps))
+          {
+            OMPL_INFORM("togo propagate success");
+            goal_solve = true;
+            // add the path to nn_
+            size_t k = 0;
+            Motion *togo_lastmotion = motion;
+            for(; k < togo_states.size(); ++k)
+            {
+              OMPL_INFORM("test point 1");
+              auto *togo_motion = new Motion();
+              togo_motion->state = pstates[k];
+              togo_motion->control = pcontrols[k];
+              togo_motion->steps = togo_steps[k];
+               OMPL_INFORM("test point 2");
+              togo_motion->c_total = togo_lastmotion->c_total + togo_distance[k];
+              togo_motion->parent = togo_lastmotion;
+               OMPL_INFORM("test point 3");
+              togo_motion->low_bound = si_->distance(togo_motion->state, goal_state);
+              OMPL_INFORM("test point 4");
+              nn_->add(togo_motion);
+              OMPL_INFORM("test point 5");
+              togo_lastmotion->children.push_back(togo_motion);
+              togo_lastmotion = togo_motion;
+            }
+
+            // back to root and update upper_bound
+            Motion *back_motion;
+            Motion *father_motion;
+            back_motion = togo_lastmotion;
+            bool is_optimal = true;
+
+            while(back_motion->parent != nullptr)
+            {
+              father_motion = back_motion->parent;
+              if(father_motion->up_bound > back_motion->up_bound + back_motion->c_total - father_motion->c_total)
+              {
+                father_motion->up_bound = back_motion->up_bound + back_motion->c_total - father_motion->c_total;
+                back_motion = father_motion;
+              }
+              else
+              {
+                is_optimal = false;
+                break;
+              }
+
+            }
+
+            if(is_optimal)
+            {
+              solution = togo_lastmotion;
+            }
+
+            lastmotion->children.push_back(motion);
+            lastmotion = motion;
+            nn_->add(motion);
+          }
+          else
+          {
+            lastmotion->children.push_back(motion);
+            lastmotion = motion;
+            nn_->add(motion);
+          }
+        }
+
+        //motion->c_total = lastmotion->c_total + si_->distance(motion->state, lastmotion->state);
+//        lastmotion->children.push_back(motion);
+//        lastmotion = motion;
+//        nn_->add(motion);
+
+        if(!goal_solve && motion->low_bound < approxdif)
+        {
+          //we always have a path, but it doesn't mean we haved arrived the goal state.
+          //before we find a solution, we choose path according to the low_bound
+          approxdif = motion->low_bound;
+          solution = motion;
+        }
+        /*
+        inter_steps++;
+        if(cum_distance[p] >= path_resolution + last_cum_distance)
+        {
+          last_cum_distance = cum_distance[p];
+          inter_motion->state = pstates[p];
+          inter_motion->control = pcontrols[p];
+          inter_motion->steps = inter_steps;
+          inter_motion->parent = lastmotion;
+          inter_motion->c_total = lastmotion->c_total + cum_distance[p];
+          solved = goal->isSatisfied(inter_motion->state, &dist);
+          inter_motion->low_bound = dist;
+          if(solved)
+          {
+            inter_motion->up_bound = dist;
+            //  back to root and update upper_bound
+            ...
+          }
+          else
+          {
+            std::vector<ob::State *> togo_states;
+            std::vector<oc::Control *> togo_controls;
+            if(propagateuntilstop(inter_motion->state, goal_state, togo_states, togo_controls))
+            {
+              // add inter point to nn_
+
+            }
+          }
+
+        } */
+
+
       }
+
       OMPL_INFORM("%d loop : approxdif : %lf; node_num: %d ", loop_times, approxdif, pstates.size());
 
       /*
@@ -302,7 +487,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
 
   OMPL_INFORM("%s time out: %u states already in datastructure", getName().c_str(), nn_->size());
 
-  /*every solve loop, we record the                                                                                                                                                         */
+  /*when time up, we update the best solution                                                                                                                                                        */
 
   bool approximate =false;
   if(!goal_solve)
@@ -468,8 +653,10 @@ bool CL_rrt::prune(Motion *new_root)
   } */
 }
 
+
 ob::PlannerStatus CL_rrt::loop_solve(const ob::PlannerTerminationCondition &ptc, const ob::State *current_state)
 {
+
   Motion *Solution = lastGoalMotion_;
   std::shared_ptr<ompl::NearestNeighbors<Motion *>> nn_t;
   nn_t.reset(ompl::tools::SelfConfig::getDefaultNearestNeighbors<Motion *>(this));
@@ -598,7 +785,9 @@ ob::PlannerStatus CL_rrt::loop_solve(const ob::PlannerTerminationCondition &ptc,
     si_->copyState(rmotion->state, dstate);
     std::vector<ob::State *> pstates;  // every expand loop, pstates point to the newly added tree nodes
     std::vector<oc::Control *> pcontrols;
-    if(propagateuntilstop(nmotion->state, rmotion->state, pstates, pcontrols))
+    std::vector<double> cum_distance;
+    std::vector<int> cum_steps;
+    if(propagateuntilstop(nmotion->state, rmotion->state, pstates, pcontrols, cum_distance, cum_steps))
     {
       OMPL_INFORM("propagate success");
       if(pstates.size() >= siC_->getMinControlDuration()){
