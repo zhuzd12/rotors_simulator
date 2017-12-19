@@ -180,9 +180,9 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
 {
   checkValidity();
   ob::Goal *goal = pdef_->getGoal().get();
-  ob::State *goal_state = pdef_->getGoal()->as<ob::GoalState>()->getState();
+  ob::State *goal_state = pdef_->getGoal().get()->as<ob::GoalState>()->getState();
   //std::cout<<std::endl;
-  auto *goal_s = dynamic_cast <ob::GoalSampleableRegion *>(goal);
+ // auto *goal_s = dynamic_cast <ob::GoalSampleableRegion *>(goal);
 
   while(const ob::State *st = pis_.nextStart())
   {
@@ -221,10 +221,11 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
   {
     loop_times++;
     /* sample random state based on current state */
-    if(goal_s && rng_.uniform01() < goalBias_ && goal_s->canSample())
-      goal_s->sampleGoal(rstate);
-    else
-      sampler_->sampleUniform(rstate);
+//    if(goal_s && rng_.uniform01() < goalBias_ && goal_s->canSample())
+//      goal_s->sampleGoal(rstate);
+//    else
+//      sampler_->sampleUniform(rstate);
+    sampler_->sampleUniform(rstate);
 
     /* find  closest state in the tree  */
     // we can choose R closest states either
@@ -298,12 +299,13 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
         motion->steps = cum_steps[p];
         motion->c_total = lastmotion->c_total + cum_distance[p];
         motion->parent = lastmotion;
-       // motion->low_bound = si_->distance(motion->state, goal_state);
+        motion->low_bound = si_->distance(motion->state, goal_state);
 
         solved = goal->isSatisfied(motion->state, &dist);
         motion->low_bound = dist;
         if(solved)
         {
+          OMPL_INFORM("Found solution in stage 1appro: %lf", dist);
           goal_solve = true;
           motion->up_bound = motion->low_bound;
          // back to root and update upper_bound
@@ -344,28 +346,27 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
           if(propagateuntilstop(motion->state, goal_state, togo_states, togo_controls, togo_distance, togo_steps))
           {
             OMPL_INFORM("togo propagate success");
+            OMPL_INFORM("Found solution in stage 2, appro: %lf", si_->distance(togo_states[togo_states.size()-1], goal_state));
             goal_solve = true;
             // add the path to nn_
             size_t k = 0;
             Motion *togo_lastmotion = motion;
+           // OMPL_INFORM("test size: %d ", togo_states.size());
             for(; k < togo_states.size(); ++k)
             {
-              OMPL_INFORM("test point 1");
+             // OMPL_INFORM("test steps: %d", k);
               auto *togo_motion = new Motion();
-              togo_motion->state = pstates[k];
-              togo_motion->control = pcontrols[k];
+              togo_motion->state = togo_states[k];
+              togo_motion->control = togo_controls[k];
               togo_motion->steps = togo_steps[k];
-               OMPL_INFORM("test point 2");
               togo_motion->c_total = togo_lastmotion->c_total + togo_distance[k];
               togo_motion->parent = togo_lastmotion;
-               OMPL_INFORM("test point 3");
               togo_motion->low_bound = si_->distance(togo_motion->state, goal_state);
-              OMPL_INFORM("test point 4");
               nn_->add(togo_motion);
-              OMPL_INFORM("test point 5");
               togo_lastmotion->children.push_back(togo_motion);
               togo_lastmotion = togo_motion;
             }
+            togo_lastmotion->up_bound = si_->distance(togo_lastmotion->state, goal_state);
 
             // back to root and update upper_bound
             Motion *back_motion;
@@ -391,6 +392,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
 
             if(is_optimal)
             {
+              OMPL_INFORM("is optimal, appro: %lf", si_->distance(togo_lastmotion->state, goal_state));
               solution = togo_lastmotion;
             }
 
@@ -400,6 +402,20 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
           }
           else
           {
+            // clear the togo path
+            size_t p_t = 0;
+            while(p_t < togo_states.size())
+            {
+              si_->freeState(togo_states[p_t]);
+              p_t++;
+            }
+            p_t = 0;
+            while(p_t < togo_controls.size())
+            {
+              siC_->freeControl(togo_controls[p_t]);
+              p_t++;
+            }
+
             lastmotion->children.push_back(motion);
             lastmotion = motion;
             nn_->add(motion);
@@ -415,6 +431,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
         {
           //we always have a path, but it doesn't mean we haved arrived the goal state.
           //before we find a solution, we choose path according to the low_bound
+          OMPL_INFORM("update solution before found");
           approxdif = motion->low_bound;
           solution = motion;
         }

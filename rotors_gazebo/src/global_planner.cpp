@@ -61,11 +61,11 @@ int main(int argc, char **argv)
 
   std::vector<WaypointWithTime> waypoints;
   const float DEG_2_RAD = M_PI / 180.0;
-  double x[4]={0,-5,0,0};
-  double y[4]={0,10,4,0};
-  double z[4]={1,36,3,7};
+  double x[4]={0,0,0,0};
+  double y[4]={0,2,4,0};
+  double z[4]={1,5,3,7};
   double t[4]={5,10,15,20};
-  double yaw[4]={0,-90,200,-90};
+  double yaw[4]={0,-90,270,-90};
   for(int i=0;i<4;i++){
     waypoints.push_back(WaypointWithTime(t[i], x[i], y[i], z[i], yaw[i] * DEG_2_RAD));
   }

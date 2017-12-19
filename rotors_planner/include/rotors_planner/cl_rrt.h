@@ -83,6 +83,11 @@ public:
     return maxDistance_;
   }
 
+  void setMinRange(double distance) //need recover to 3d range
+  {
+    minDistance_ = distance;
+  }
+
   void setPathdeviation( double pathdeviation)
   {
     path_deviation = pathdeviation;

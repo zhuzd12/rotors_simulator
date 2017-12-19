@@ -511,7 +511,7 @@ int main(int argc, char **argv)
 //  ompl::control::ODESolverPtr odeSolver (new oc::ODEBasicSolver<> (si, std::bind(&QuadrotorODE, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, std::placeholders::_1,
 //                                                                                             std::placeholders::_2, std::placeholders::_3)));
 //  si->setStatePropagator(oc::ODESolver::getStatePropagator(odeSolver));
-  si->setPropagationStepSize(0.05);
+  si->setPropagationStepSize(0.02);
   si->setMinMaxControlDuration(1, 10);
   si->setStateValidityCheckingResolution(0.25);
   si->setup();
@@ -547,6 +547,7 @@ int main(int argc, char **argv)
   planner->setPathdeviation(0.2);
   planner->setPathresolution(0.25);
   planner->setRange(3);
+  planner->setMinRange(0.20);
   planner->setController(std::bind(&Lee_controller, lee_position_controller_, std::placeholders::_1, std::placeholders::_2,std::placeholders::_3));
   planner->setProblemDefinition(pdef);
   planner->setup();
@@ -562,28 +563,28 @@ int main(int argc, char **argv)
 
 
   // attempt to solve the problem within one second of planning time
-  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(3.0);
+  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(20.0);
   ob::PlannerStatus solved = planner->solve(ptc);
 
   if (solved)
       {
           // get the goal representation from the problem definition (not the same as the goal state)
           // and inquire about the found path
-         // ob::PathPtr path = pdef->getSolutionPath();
+          ob::PathPtr path = pdef->getSolutionPath();
           std::cout << "Found solution:" << std::endl;
 
           // print the path to screen
-          //path->print(std::cout);
-          //std::cout<<"first loop find solution"<<std::endl;
+          path->print(std::cout);
+         // std::cout<<"first loop find solution"<<std::endl;
       }
    else
       std::cout << "No solution found" << std::endl;
   std::vector<rotors_planner::Motion *> solution_path;
   solution_path = planner->get_solution_motions();
-  int index = solution_path.size()- 100;
-  std::cout<<"solution states: "<<solution_path.size()<<std::endl;
-  std::cout<<"new current state index: "<<index<<std::endl;
-  ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
+  //int index = solution_path.size()- 100;
+//  std::cout<<"solution states: "<<solution_path.size()<<std::endl;
+//  std::cout<<"new current state index: "<<index<<std::endl;
+//  ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
 
 
   /*
@@ -667,18 +668,36 @@ int main(int argc, char **argv)
   /* rviz interface */
 
   ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
-  visualization_msgs::Marker line_strip;
-  line_strip.header.frame_id = "/world";
-  line_strip.ns = "planning_trajectory";
-  line_strip.action = visualization_msgs::Marker::ADD;
-  line_strip.pose.orientation.w = 1.0;
+  visualization_msgs::Marker line_strip, points;
+  points.header.frame_id = line_strip.header.frame_id = "/world";
+  points.header.stamp = line_strip.header.stamp = ros::Time::now();
+  points.ns = line_strip.ns = "planning_trajectory";
+  points.action = line_strip.action = visualization_msgs::Marker::ADD;
+  points.pose.orientation.w = line_strip.pose.orientation.w = 1.0;
 
+  points.id = 0;
   line_strip.id = 1;
+  points.type = visualization_msgs::Marker::POINTS;
   line_strip.type = visualization_msgs::Marker::LINE_STRIP;
 
-  line_strip.scale.x = 0.1;
-  line_strip.color.b = 1.0;
+  points.scale.x = 1;
+  points.scale.y = 1;
+  points.color.r = 0.0f/255.0f;
+  points.color.g = 255.0f/255.0f;
+  points.color.b = 154.0f/255.0f;
+  points.color.a = 1.0;
+
+  line_strip.scale.x = 0.2;
+  line_strip.color.r = 34.0f/255.0f;
+  line_strip.color.g = 139.0f/255.0f;
+  line_strip.color.b = 34.0f/255.0f;
   line_strip.color.a = 1.0;
+
+  geometry_msgs::Point goal_point;
+  goal_point.x = heading_position[0];
+  goal_point.y = heading_position[1];
+  goal_point.z = heading_position[2];
+  points.points.push_back(goal_point);
 
   for(int i = solution_path.size()-1; i >= 0; --i)
   {
@@ -688,7 +707,7 @@ int main(int argc, char **argv)
     p.x = point_position[0];
     p.y = point_position[1];
     p.z = point_position[2];
-   // std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
+    std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
     line_strip.points.push_back(p);
   }
 
@@ -702,6 +721,7 @@ int main(int argc, char **argv)
   ros::Rate rate(10);
   while(ros::ok()){
     octomap_pub.publish(octo_msg);
+    marker_pub.publish(points);
     marker_pub.publish(line_strip);
 
     rate.sleep();
