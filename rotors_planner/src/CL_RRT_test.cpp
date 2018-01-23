@@ -45,6 +45,8 @@
 #include <rotors_control/parameters_ros.h>
 #include <rotors_control/lee_position_controller.h>
 
+#include "rotors_planner/common.h"
+
 #include <Eigen/Dense>
 //#define pi 3.14159265359
 
@@ -253,7 +255,7 @@ bool isStateValid(const oc::SpaceInformation *si, const octomap::OcTree *octree_
  // std::cout <<"current position X:" <<current_position(0) <<"Y: "<<current_position(1)<<"Z: "<<current_position(2)<<std::endl;
   //fcl::Box uav_box(0.3,0.3,0.3);
   //std::shared_ptr<fcl::Box<float>> uav_box(new fcl::Box<float>(0.1,0.1,0.1));
-  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.1, 0.1, 0.1));
+  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.5, 0.5, 0.3));
 //  fcl::BVHModel<fcl::OBBRSS<float>> uav_model;
 //  fcl::BVHModel<fcl::OBBRSS<float>> *uav_model_ptr = &uav_model;
   fcl::Matrix3d R;
@@ -310,22 +312,35 @@ bool simple_isStateValid(const ob::State *state, const octomap::OcTree *octomap_
 }
 
 bool sim_running = false;
+rotors_control::EigenOdometry current_odometry;
+
+
 
 void callback(const sensor_msgs::ImuPtr& msg) {
   sim_running = true;
 }
 
-
+void OdometryCallback(const nav_msgs::OdometryConstPtr& odometry_msg) {
+  //std::cout<<"odometry!"<<std::endl;
+  rotors_control::eigenOdometryFromMsg(odometry_msg, &current_odometry);
+}
 
 
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "CL_RRT_test");
   ros::NodeHandle nh;
-  ros::NodeHandle pnh("/pelican/lee_position_controller_node");
+  ros::NodeHandle pnh("/pelican/lee_position_controller_nostop_node");
 
   // The IMU is used, to determine if the simulator is running or not.
   ros::Subscriber sub = nh.subscribe("imu", 10, &callback);
+
+  ros::Subscriber odometry_sub_ = nh.subscribe("odometry_sensor1/odometry", 1,
+                               OdometryCallback);
+
+  ros::Publisher trajectory_pub =
+  nh.advertise<trajectory_msgs::MultiDOFJointTrajectory>(
+  mav_msgs::default_topics::COMMAND_TRAJECTORY, 10);
 
   ros::Publisher octomap_pub = nh.advertise<octomap_msgs::Octomap>("/octo_test", 10);
 
@@ -398,7 +413,7 @@ int main(int argc, char **argv)
   //ob::StateSpacePtr stateSpace = SO3 + POS + velocity + angular_vel;
 
   std::shared_ptr<ob::CompoundStateSpace> stateSpace(new ob::CompoundStateSpace());
-  stateSpace->addSubspace(SO3, 1.0);
+  stateSpace->addSubspace(SO3, 0.0);
   stateSpace->addSubspace(POS, 1.0);
   stateSpace->addSubspace(velocity, 0.0);
   stateSpace->addSubspace(angular_vel, 0.0);
@@ -542,7 +557,7 @@ int main(int argc, char **argv)
   pdef->setStartAndGoalStates(start, goal, 0.2);
 
   std::shared_ptr<rotors_planner::CL_rrt> planner(new rotors_planner::CL_rrt(si));
-  planner->setGoalBias(0.2);
+  planner->setGoalBias(0.1);
   planner->setName("CL_RRT");
   planner->setPathdeviation(0.2);
   planner->setPathresolution(0.25);
@@ -563,32 +578,9 @@ int main(int argc, char **argv)
 
 
   // attempt to solve the problem within one second of planning time
-  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(20.0);
+  ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(1.0);
   ob::PlannerStatus solved = planner->solve(ptc);
 
-  if (solved)
-      {
-          // get the goal representation from the problem definition (not the same as the goal state)
-          // and inquire about the found path
-          ob::PathPtr path = pdef->getSolutionPath();
-          std::cout << "Found solution:" << std::endl;
-
-          // print the path to screen
-          path->print(std::cout);
-         // std::cout<<"first loop find solution"<<std::endl;
-      }
-   else
-      std::cout << "No solution found" << std::endl;
-  std::vector<rotors_planner::Motion *> solution_path;
-  solution_path = planner->get_solution_motions();
-  //int index = solution_path.size()- 100;
-//  std::cout<<"solution states: "<<solution_path.size()<<std::endl;
-//  std::cout<<"new current state index: "<<index<<std::endl;
-//  ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
-
-
-  /*
-  solved = planner->loop_solve(ptc2, solution_path[index]->state);
   if (solved)
       {
           // get the goal representation from the problem definition (not the same as the goal state)
@@ -598,7 +590,30 @@ int main(int argc, char **argv)
 
           // print the path to screen
           //path->print(std::cout);
+      }
+   else
+      std::cout << "No solution found" << std::endl;
+  std::vector<rotors_planner::Motion *> solution_path;
+  solution_path = planner->get_solution_motions();
 
+//  int index = solution_path.size()- 100;
+//  std::cout<<"solution states: "<<solution_path.size()<<std::endl;
+//  std::cout<<"new current state index: "<<index<<std::endl;
+//  ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
+
+  /*
+  solved = planner->loop_solve(ptc2, solution_path[index]->state);
+  solution_path.clear();
+  solution_path = planner->get_solution_motions();
+  if (solved)
+      {
+          // get the goal representation from the problem definition (not the same as the goal state)
+          // and inquire about the found path
+          ob::PathPtr path = pdef->getSolutionPath();
+          std::cout << "Found solution:" << std::endl;
+
+          // print the path to screen
+          path->print(std::cout);
       }
    else
       std::cout << "No solution found" << std::endl;
@@ -664,21 +679,55 @@ int main(int argc, char **argv)
 
    */
 
+  ROS_INFO("Start publishing trajectory_pub planned trajectory.");
+
+  planner->recordSolution();
+  //std::vector<WaypointWithTime> waypoints = planner->waypoints;
+  ROS_INFO("Read %d waypoints.", (int) planner->waypoints.size());
+  trajectory_msgs::MultiDOFJointTrajectoryPtr msg(new trajectory_msgs::MultiDOFJointTrajectory);
+  msg->header.stamp = ros::Time::now();
+  msg->points.resize(planner->waypoints.size());
+  msg->joint_names.push_back("base_link");
+  int64_t time_from_start_ns = 0;
+  for (size_t i = 0; i < planner->waypoints.size(); ++i) {
+    WaypointWithTime& wp = planner->waypoints[i];
+
+    mav_msgs::EigenTrajectoryPoint trajectory_point;
+    trajectory_point.position_W = wp.position;
+    trajectory_point.setFromYaw(wp.yaw);
+    trajectory_point.time_from_start_ns = time_from_start_ns;
+
+//    std::cout << "Waypoint XYZ: " << wp.position(0) << " "
+//              <<  wp.position(1) <<  " " <<  wp.position(2)  << std::endl;
+
+    time_from_start_ns += static_cast<int64_t>(wp.waiting_time * kNanoSecondsInSecond);
+
+    mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &msg->points[i]);
+  }
+
+  trajectory_pub.publish(msg);
+  ros::spinOnce();
 
   /* rviz interface */
-
-  ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
-  visualization_msgs::Marker line_strip, points;
-  points.header.frame_id = line_strip.header.frame_id = "/world";
-  points.header.stamp = line_strip.header.stamp = ros::Time::now();
-  points.ns = line_strip.ns = "planning_trajectory";
-  points.action = line_strip.action = visualization_msgs::Marker::ADD;
-  points.pose.orientation.w = line_strip.pose.orientation.w = 1.0;
+  ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 1);
+  visualization_msgs::Marker line_strip, points, line_actual, line_protect, line_tree;
+  line_protect.header.frame_id = line_tree.header.frame_id = points.header.frame_id = line_strip.header.frame_id = line_actual.header.frame_id = "/world";
+  line_protect.header.stamp = line_tree.header.stamp = points.header.stamp = line_strip.header.stamp = line_actual.header.stamp = ros::Time::now();
+  line_protect.ns = line_tree.ns = points.ns = line_strip.ns = line_actual.ns = "planning_trajectory";
+  line_protect.action = line_tree.action = points.action = line_strip.action = line_actual.action = visualization_msgs::Marker::ADD;
+  //line_strip.action = visualization_msgs::Marker::ARROW;
+  line_protect.pose.orientation.w = line_tree.pose.orientation.w = points.pose.orientation.w = line_strip.pose.orientation.w = line_actual.pose.orientation.w = 1.0;
 
   points.id = 0;
   line_strip.id = 1;
+  line_actual.id = 2;
+  line_protect.id = 3;
+  line_tree.id = 4;
   points.type = visualization_msgs::Marker::POINTS;
   line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+  line_actual.type = visualization_msgs::Marker::LINE_STRIP;
+  line_protect.type = visualization_msgs::Marker::LINE_STRIP;
+  line_tree.type = visualization_msgs::Marker::LINE_LIST;
 
   points.scale.x = 1;
   points.scale.y = 1;
@@ -692,6 +741,24 @@ int main(int argc, char **argv)
   line_strip.color.g = 139.0f/255.0f;
   line_strip.color.b = 34.0f/255.0f;
   line_strip.color.a = 1.0;
+
+  line_actual.scale.x = 0.2;
+  line_actual.color.r = 0.0f/255.0f;
+  line_actual.color.g = 191.0f/255.0f;
+  line_actual.color.b = 255.0f/255.0f;
+  line_actual.color.a = 1.0;
+
+  line_protect.scale.x = 0.25;
+  line_protect.color.r = 255.0f/255.0f;
+  line_protect.color.g = 99.0f/255.0f;
+  line_protect.color.b = 71.0f/255.0f;
+  line_protect.color.a = 1.0;
+
+  line_tree.scale.x = 0.05;
+  line_tree.color.r = 184.0f/255.0f;
+  line_tree.color.g = 134.0f/255.0f;
+  line_tree.color.b = 11.0f/255.0f;
+  line_tree.color.a = 1.0;
 
   geometry_msgs::Point goal_point;
   goal_point.x = heading_position[0];
@@ -712,20 +779,177 @@ int main(int argc, char **argv)
   }
 
 
-
-  ros::spinOnce();
   octomap_msgs::Octomap octo_msg;
   octo_msg.header.frame_id = "/world";
   octomap_msgs::binaryMapToMsg(*octomap_,octo_msg);
+  ob::State *update_state = stateSpace->allocState();
+  ob::CompoundStateSpace::StateType& us = *update_state->as<ob::CompoundStateSpace::StateType>();
+  double *update_angular= us.as<ob::RealVectorStateSpace::StateType>(0)->values;
+  double *update_position = us.as<ob::RealVectorStateSpace::StateType>(1)->values;
+  double *update_velocity = us.as<ob::RealVectorStateSpace::StateType>(2)->values;
+  double *update_angular_vel = us.as<ob::RealVectorStateSpace::StateType>(3)->values;
+  update_angular[0] = 0.0; update_angular[1] = 0.0; update_angular[2] = 0.0;
 
-  ros::Rate rate(10);
+  update_velocity[0] = 0.0; update_velocity[1] = 0.0; update_velocity[2] = 0.0;
+  update_angular_vel[0] = 0.0; update_angular_vel[1] = 0.0; update_angular_vel[2] = 0.0;
+  Eigen::Map<Eigen::Vector3d> target_pos(heading_position);
+  //ros::Rate rate(0.5);
   while(ros::ok()){
-    octomap_pub.publish(octo_msg);
+    // update current uav state
+    ros::spinOnce();
+    Eigen::Vector3d update_position_vector = current_odometry.position;
+    update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
+    geometry_msgs::Point p_f;
+    p_f.x = update_position_vector[0];
+    p_f.y = update_position_vector[1];
+    p_f.z = update_position_vector[2];
+    line_actual.points.push_back(p_f);
+    OMPL_INFORM("before planning state: %lf %lf %lf",update_position_vector[0], update_position_vector[1], update_position_vector[2]);
+    Eigen::Vector3d position_error = current_odometry.position -target_pos;
+    if(std::sqrt(position_error.dot(position_error)) < planner->getPathdeviation())
+      break;
+    // begin real time plan
+    ob::PlannerTerminationCondition ptc_rt = ob::timedPlannerTerminationCondition(1.0);
+    solved = planner->loop_solve(ptc_rt, update_state);
+    //solved = planner->loop_solve(ptc_rt, heading_state);
+
+    // propagate again
+    // attention: current state is update again
+    // and evaluate delta_t meanwhile
+    // prune the solution path according current state
+    ros::spinOnce();
+    update_position_vector = current_odometry.position;
+    update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
+    //planner->recordSolution();
+    OMPL_INFORM("after plannnig state: %lf %lf %lf",update_position_vector[0], update_position_vector[1], update_position_vector[2]);
+    if(planner->prune_path(update_state))
+    {
+    solution_path.clear();
+    solution_path = planner->get_solution_motions();
+
+    // waypoints interface
+    //std::vector<WaypointWithTime> update_waypoints = planner->waypoints;
+    ROS_INFO("Read %d waypoints.", (int) planner->waypoints.size());
+    trajectory_msgs::MultiDOFJointTrajectoryPtr rt_msg(new trajectory_msgs::MultiDOFJointTrajectory);
+    rt_msg->header.stamp = ros::Time::now();
+    rt_msg->points.resize(planner->waypoints.size());
+    rt_msg->joint_names.push_back("base_link");
+    int64_t time_from_start_ns = 0;
+    for (size_t i = 0; i < planner->waypoints.size(); ++i) {
+      WaypointWithTime& wp = planner->waypoints[i];
+      mav_msgs::EigenTrajectoryPoint trajectory_point;
+      trajectory_point.position_W = wp.position;
+      trajectory_point.setFromYaw(wp.yaw);
+      trajectory_point.time_from_start_ns = time_from_start_ns;
+//      std::cout << "Waypoint XYZ: " << wp.position(0) << " "
+//                <<  wp.position(1) <<  " " <<  wp.position(2)  << std::endl;
+
+      time_from_start_ns += static_cast<int64_t>(wp.waiting_time * kNanoSecondsInSecond);
+
+      mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &rt_msg->points[i]);
+    }
+    ROS_INFO("waypoint msg complete");
+
+    //update line_strip
+    line_protect.points.clear();
+    line_strip.points.clear();
+    line_tree.points.clear();
+    bool is_pro_neighbor = false;
+    for(int i = solution_path.size()-1; i >= 0; --i)
+    {
+      ob::CompoundStateSpace::StateType& ps = *solution_path[i]->state->as<ob::CompoundStateSpace::StateType>();
+      double *point_position = ps.as<ob::RealVectorStateSpace::StateType>(1)->values;
+      geometry_msgs::Point p;
+      p.x = point_position[0];
+      p.y = point_position[1];
+      p.z = point_position[2];
+      std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
+      if(is_pro_neighbor && solution_path[i]->commit_protect)
+        line_protect.points.push_back(p);
+      else
+      {
+        if(is_pro_neighbor)
+        {
+          line_protect.points.push_back(p);
+          is_pro_neighbor = false;
+        }
+        line_strip.points.push_back(p);
+      }
+    }
+    //ROS_INFO("line strip complete");
+    std::stack<rotors_planner::Motion *> box;
+    box.push(planner->get_root_node());
+
+    while (!box.empty()) {
+      rotors_planner::Motion *current_addmotion = box.top();
+      box.pop();
+      ob::CompoundStateSpace::StateType& ps = *current_addmotion->state->as<ob::CompoundStateSpace::StateType>();
+      double *point_position = ps.as<ob::RealVectorStateSpace::StateType>(1)->values;
+      geometry_msgs::Point p;
+      p.x = point_position[0];
+      p.y = point_position[1];
+      p.z = point_position[2];
+
+      for(auto &new_addmotion :current_addmotion->children)
+      {
+         ob::CompoundStateSpace::StateType& ps_c = *new_addmotion->state->as<ob::CompoundStateSpace::StateType>();
+         double *point_position_c = ps_c.as<ob::RealVectorStateSpace::StateType>(1)->values;
+         geometry_msgs::Point p_c;
+         p_c.x = point_position_c[0];
+         p_c.y = point_position_c[1];
+         p_c.z = point_position_c[2];
+         line_tree.points.push_back(p);
+         line_tree.points.push_back(p_c);
+         box.push(new_addmotion);
+      }
+    }
+
+    // publish info
+    trajectory_pub.publish(rt_msg);
     marker_pub.publish(points);
     marker_pub.publish(line_strip);
+    marker_pub.publish(line_protect);
+    marker_pub.publish(line_tree);
+   }
+    else // no need to plan
+    {
+      trajectory_msgs::MultiDOFJointTrajectoryPtr rt_msg(new trajectory_msgs::MultiDOFJointTrajectory);
+      mav_msgs::EigenTrajectoryPoint trajectory_point;
+      trajectory_point.position_W = update_position_vector;
+      trajectory_point.setFromYaw(0);
+      trajectory_point.time_from_start_ns = 0.0;
+      mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &rt_msg->points[0]);
+      trajectory_pub.publish(rt_msg);
 
-    rate.sleep();
+//      line_strip.points.clear();
+//      line_strip.color.r = 255.0f/255.0f;
+//      line_strip.color.g = 99.0f/255.0f;
+//      line_strip.color.b = 71.0f/255.0f;
+//      geometry_msgs::Point p_s;
+//      p_s.x = update_position_vector[0];
+//      p_s.y = update_position_vector[1];
+//      p_s.z = update_position_vector[2];
+//      line_strip.points.push_back(p_s);
+//      line_strip.points.push_back(p_s);
+      marker_pub.publish(points);
+     // marker_pub.publish(line_strip);
+    }
+    geometry_msgs::Point p_e;
+    p_e.x = update_position_vector[0];
+    p_e.y = update_position_vector[1];
+    p_e.z = update_position_vector[2];
+    line_actual.points.push_back(p_e);
+
+    marker_pub.publish(line_actual);
+    octomap_pub.publish(octo_msg);
+    ros::spinOnce();
+    //rate.sleep();
   }
+
+  if(check_state)
+    si->freeState(check_state);
+  if(heading_state)
+    si->freeState(heading_state);
   //octomap_->read(octo_file);
   ros::shutdown();
 

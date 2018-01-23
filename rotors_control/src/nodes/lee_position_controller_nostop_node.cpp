@@ -90,7 +90,7 @@ void LeePositionControllerNostopNode::InitializeParams() {
   GetVehicleParameters(pnh, &lee_position_controller_.vehicle_parameters_);
   lee_position_controller_.InitializeParameters();
   waypoint_deviation = 0.2;
-  yaw_deviation = 5.0 * M_PI/180.0;
+  yaw_deviation = 360.0 * M_PI/180.0;
 }
 
 void LeePositionControllerNostopNode::Publish() {
@@ -155,10 +155,10 @@ void LeePositionControllerNostopNode::OdometryCallback(const nav_msgs::OdometryC
   Eigen::Vector3d target_position = target_state.position_W;
   double target_yaw = angluar_normalization(target_state.getYaw());
   Eigen::Matrix3d R = odometry.orientation.toRotationMatrix();
-  Eigen::Vector3d euler = R.eulerAngles(2,1,0);
-  double current_yaw = angluar_normalization(euler[0] - M_PI);
-  std::cout<<"current position: "<<current_position[0]<<" "<<current_position[1]<<" "<<current_position[2]<<" "<<current_yaw<<std::endl;
-  std::cout<<"target position: "<<target_position[0]<<" "<<target_position[1]<<" "<<target_position[2]<<" "<<target_yaw<<std::endl;
+  Eigen::Vector3d euler = R.eulerAngles(0,1,2);
+  double current_yaw = angluar_normalization(euler[2]);
+  //std::cout<<"current position: "<<current_position[0]<<" "<<current_position[1]<<" "<<current_position[2]<<" "<<current_yaw<<std::endl;
+  //std::cout<<"target position: "<<target_position[0]<<" "<<target_position[1]<<" "<<target_position[2]<<" "<<target_yaw<<std::endl;
 
   Eigen::Vector3d position_error = current_position - target_position;
   if(std::sqrt(position_error.dot(position_error)) < waypoint_deviation && std::abs(current_yaw - target_yaw) < yaw_deviation)

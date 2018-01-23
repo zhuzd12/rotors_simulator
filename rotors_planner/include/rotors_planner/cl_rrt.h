@@ -6,6 +6,7 @@
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/base/goals/GoalState.h>
 #include <functional>
+#include <rotors_planner/common.h>
 
 namespace rotors_planner {
 
@@ -32,6 +33,7 @@ public:
   ob::State *state{nullptr};
   oc::Control *control{nullptr};
   unsigned int steps{0};
+  bool commit_protect{false};
   double c_total{std::numeric_limits<double>::infinity()};
   double low_bound{std::numeric_limits<double>::infinity()};
   double up_bound{std::numeric_limits<double>::infinity()};
@@ -55,6 +57,8 @@ public:
   ob::PlannerStatus loop_solve(const ob::PlannerTerminationCondition &ptc, const ob::State *current_state);
 
   bool prune(Motion *new_root);
+
+  bool prune_path(const ob::State *state_rt);
 
   std::vector<Motion *> get_solution_motions()
   {
@@ -103,6 +107,10 @@ public:
     path_resolution = pathresoluton;
   }
 
+  Motion * get_root_node()
+  {
+    return current_root;
+  }
   template <template <typename T> class NN>
   void setNearestNeighbors()
   {
@@ -130,6 +138,7 @@ public:
     return Controlfn_;
   }
 
+  void recordSolution();
 
 protected:
   void freeMemory();
@@ -138,9 +147,15 @@ protected:
   double distanceFunction(const Motion *a, const Motion *b) const
   {
     if(goal_solve)
-      return std::min(a->c_total, b->c_total);
+      //return std::min(a->c_total, b->c_total);
+      return std::min(a->c_total + si_->distance(a->state, b->state), b->c_total + si_->distance(a->state, b->state));
     else
       return si_->distance(a->state, b->state);
+  }
+
+  double distanceFunction2(const Motion *a, const Motion *b) const
+  {
+    return si_->distance(a->state, b->state);
   }
 
   ob::StateSamplerPtr sampler_;
@@ -149,7 +164,7 @@ protected:
   double goalBias_{.05};
   double maxDistance_{100.};
   double minDistance_{1.0};
-  double deltaT{1.0};
+  double deltaT{0.1};
   //double global_low_bound{std::numeric_limits<double>::infinity()};
   ompl::RNG rng_;
   Motion *lastGoalMotion_{nullptr};
@@ -160,7 +175,8 @@ protected:
   double path_deviation{.1};
   double path_resolution{.25};
   ControllerFn Controlfn_;
-
+public:
+    std::vector<WaypointWithTime> waypoints;
 };
 
 #endif // CL_RRT_H

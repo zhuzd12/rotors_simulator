@@ -29,25 +29,12 @@
 #include <cstring>
 #include <boost/filesystem.hpp>
 
+#include "rotors_planner/common.h"
+
 namespace ob = ompl::base;
 namespace og = ompl::geometric;
 
-static const int64_t kNanoSecondsInSecond = 1000000000;
 
-class WaypointWithTime {
- public:
-  WaypointWithTime()
-      : waiting_time(0), yaw(0.0) {
-  }
-
-  WaypointWithTime(double t, float x, float y, float z, float _yaw)
-      : position(x, y, z), yaw(_yaw), waiting_time(t) {
-  }
-
-  Eigen::Vector3d position;
-  double yaw;
-  double waiting_time;
-};
 
 template<class TreeType>
   void copy_readTree(TreeType* octree, const octomap_msgs::Octomap& msg){

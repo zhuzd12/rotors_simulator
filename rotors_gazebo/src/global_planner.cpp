@@ -9,6 +9,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <trajectory_msgs/MultiDOFJointTrajectory.h>
+#include <gazebo_msgs/SpawnModel.h>
 
 bool sim_running = false;
 
@@ -53,6 +54,34 @@ int main(int argc, char **argv)
   }
 
   ROS_INFO("global planner begins");
+
+  std::string obs_file ;
+
+  if (argc == 2 ) {
+   obs_file = argv[1];
+    ROS_INFO("read obstacle file: %s", argv[1]);
+  }
+  ros::ServiceClient model_client = nh.serviceClient<gazebo_msgs::SpawnModel>("/gazebo/spawn_sdf_model");
+  gazebo_msgs::SpawnModel srv;
+  geometry_msgs::Pose initial_pose;
+  initial_pose.position.x = 3;
+  initial_pose.position.y = 3;
+  initial_pose.position.z = 3;
+  initial_pose.orientation.w = 1;
+  initial_pose.orientation.x = 0;
+  initial_pose.orientation.y = 0;
+  initial_pose.orientation.z = 0;
+  srv.request.model_name = "big_box";
+  srv.request.model_xml = obs_file;
+  srv.request.initial_pose = initial_pose;
+  srv.request.reference_frame = "/world";
+  srv.request.robot_namespace = nh.getNamespace();
+  if(model_client.call(srv))
+  {
+    ROS_INFO("call service");
+    if(srv.response.success)
+      ROS_INFO("spawn obstacle successfully");
+  }
 
   // Wait for 30s such that everything can settle and the mav flies to the initial position.
   ros::Duration(30).sleep();
