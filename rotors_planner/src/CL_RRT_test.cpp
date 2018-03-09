@@ -806,7 +806,7 @@ int main(int argc, char **argv)
     line_actual.points.push_back(p_f);
     OMPL_INFORM("before planning state: %lf %lf %lf",update_position_vector[0], update_position_vector[1], update_position_vector[2]);
     Eigen::Vector3d position_error = current_odometry.position -target_pos;
-    if(std::sqrt(position_error.dot(position_error)) < planner->getPathdeviation())
+    if(std::sqrt(position_error.dot(position_error)) < 2*planner->getPathdeviation())
       break;
     // begin real time plan
     ob::PlannerTerminationCondition ptc_rt = ob::timedPlannerTerminationCondition(1.0);
