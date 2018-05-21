@@ -27,9 +27,9 @@
   <xacro:vi_sensor_macro
     namespace="${namespace}/vi_sensor"
     parent_link="${namespace}/base_link"
-    enable_cameras="true"
+    enable_cameras="false"
     enable_depth="true"
-    enable_ground_truth="true">
+    enable_ground_truth="false">
     <origin xyz="0.1 0.0 -0.03" rpy="0.0 0.1 0.0" />
   </xacro:vi_sensor_macro>
 </robot>

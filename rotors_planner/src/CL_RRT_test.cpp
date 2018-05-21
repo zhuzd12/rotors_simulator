@@ -914,6 +914,9 @@ int main(int argc, char **argv)
     else // no need to plan
     {
       trajectory_msgs::MultiDOFJointTrajectoryPtr rt_msg(new trajectory_msgs::MultiDOFJointTrajectory);
+      rt_msg->header.stamp = ros::Time::now();
+      rt_msg->points.resize(1);
+      rt_msg->joint_names.push_back("base_link");
       mav_msgs::EigenTrajectoryPoint trajectory_point;
       trajectory_point.position_W = update_position_vector;
       trajectory_point.setFromYaw(0);
