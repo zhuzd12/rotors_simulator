@@ -67,6 +67,9 @@ add_executable(RRT_planner src/RRT_planner.cpp)
 target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS})
 
+add_executable(statevalid src/statevalid.cpp)
+target_link_libraries(statevalid ${catkin_LIBRARIES} ${FCL_LIBRARIES} ${CCD_LIBRARIES})
+add_dependencies(statevalid ${catkin_EXPORTED_TARGETS})
 
 
 add_executable(CL_RRT_test src/CL_RRT_test.cpp)

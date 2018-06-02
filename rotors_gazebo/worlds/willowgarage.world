@@ -1,6 +1,10 @@
 <?xml version="1.0" ?>
 <sdf version="1.4">
   <world name="default">
+  <plugin name='gazebo_octomap' filename='librotors_gazebo_octomap_plugin.so'>
+    <octomapPubTopic>world/octomap</octomapPubTopic>
+    <octomapServiceName>world/get_octomap</octomapServiceName>
+  </plugin>
     <include>
       <uri>model://ground_plane</uri>
     </include>
