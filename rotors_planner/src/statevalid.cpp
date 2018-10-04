@@ -86,7 +86,11 @@ bool isStateValid(const rotors_control::EigenOdometry& odometry, const octomap::
   fcl::collide(env_obj, uav_obj, request, result);
 
   bool is_in_box = false;
-  if(current_position[0] > -15 && current_position[0] < 35 && current_position[1] < 15 && current_position[1] >-35 && current_position[2]<50 && current_position[2]>0){
+  double max_metricx, max_metricy, max_metricz;
+  double min_metricx, min_metricy, min_metricz;
+  octree_->getMetricMax(max_metricx, max_metricy, max_metricz);
+  octree_->getMetricMin(min_metricx, min_metricy, min_metricz);
+  if(current_position[0] > min_metricx && current_position[0] < max_metricx && current_position[1] <  max_metricy && current_position[1] >min_metricy && current_position[2]<max_metricz && current_position[2]>std::max(0.1,min_metricz)){
       std::cout<<"mav not out of range"<<std::endl;
       is_in_box = true;
   }

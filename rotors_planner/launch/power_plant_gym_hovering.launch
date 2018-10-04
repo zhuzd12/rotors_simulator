@@ -4,7 +4,7 @@
 <arg name="enable_logging" default="false" />
 <arg name="enable_ground_truth" default="true" />
 <arg name="log_file" default="$(arg mav_name)" />
-<arg name="enable_camera" default="false" />
+<arg name="enable_camera" default="true" />
 <arg name="enable_depth" default="true" />
 
 <env name="GAZEBO_MODEL_PATH" value="${GAZEBO_MODEL_PATH}:$(find rotors_gazebo)/models"/>
