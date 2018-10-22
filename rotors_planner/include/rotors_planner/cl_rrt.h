@@ -126,7 +126,7 @@ public:
     Controlfn_ = svc;
   }
 
-  bool propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &result, std::vector<oc::Control *> &control_result, std::vector<double>& cum_distance, std::vector<int>& cum_steps) const;
+  bool propagateuntilstop(const ob::State *state, const ob::State *heading_state, std::vector<ob::State *> &state_sequence, std::vector<oc::Control *> &control_sequence, std::vector<double>& cum_distance, std::vector<int>& cum_steps) const;
 
   bool provideControl(const ob::State *state, const ob::State *heading_state,  oc::Control *control)
   {
@@ -179,6 +179,6 @@ public:
     std::vector<WaypointWithTime> waypoints;
 };
 
-#endif // CL_RRT_H
-
 }
+
+#endif // CL_RRT_H

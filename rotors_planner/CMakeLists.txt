@@ -80,6 +80,14 @@ target_link_libraries(CL_RRT_test cl_rrt
     ${CCD_LIBRARIES})
 add_dependencies(CL_RRT_test ${catkin_EXPORTED_TARGETS})
 
+add_executable(CL_RRT_MAV src/CL_RRT_MAV.cpp)
+target_link_libraries(CL_RRT_MAV cl_rrt 
+    ${catkin_LIBRARIES} 
+    ${OMPL_LIBRARIES} 
+    ${FCL_LIBRARIES}
+    ${CCD_LIBRARIES})
+add_dependencies(CL_RRT_MAV ${catkin_EXPORTED_TARGETS})
+
 install(TARGETS cl_rrt
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )

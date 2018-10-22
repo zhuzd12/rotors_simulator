@@ -38,7 +38,7 @@
 
 
 #include <iostream>
-#include <cstring>
+#include <string>
 #include <boost/filesystem.hpp>
 
 #include "rotors_planner/cl_rrt.h"
@@ -65,19 +65,21 @@ double angluar_normalization(double angular)
   return temp;
 }
 
-void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_, const oc::SpaceInformationPtr si, const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
+/* define Hexacopter dynamic model */
+void Hexacopterpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_, const oc::SpaceInformationPtr si, const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
 {
     static double timestep = .01;
     int nsteps = ceil(duration / timestep);
     double dt = duration / nsteps;
 
     double *input_rotors_control = control->as<oc::RealVectorControlSpace::ControlType>()->values;
-    Eigen::Map<Eigen::Vector4d> U(input_rotors_control);
-    for (int k=0; k<4; ++k)
+    Eigen::VectorXd rotors_(vehicle_parameters_.rotor_configuration_.rotors.size());
+    for (int k=0; k<vehicle_parameters_.rotor_configuration_.rotors.size(); ++k)
     {
-      U(k) = U(k) * U(k);
+      rotors_(k) = input_rotors_control[k] * input_rotors_control[k];
     }
-    U = allocation_matrix * U;
+    Eigen::Vector4d U;
+    U = allocation_matrix * rotors_;
     ob::CompoundStateSpace::StateType& s = *result->as<ob::CompoundStateSpace::StateType>();
     ob::RealVectorStateSpace::StateType& Angular = *s.as<ob::RealVectorStateSpace::StateType>(0);
     ob::RealVectorStateSpace::StateType& Position = *s.as<ob::RealVectorStateSpace::StateType>(1);
@@ -85,7 +87,6 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
     ob::RealVectorStateSpace::StateType& Angular_vel = *s.as<ob::RealVectorStateSpace::StateType>(3);
 
     si->getStateSpace()->copyState(result, start);
-
 
     for(int i=0; i<nsteps; i++)
     {
@@ -106,27 +107,12 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
           0.0, cos(Angular.values[0]), -sin(Angular.values[0]),
           0.0,  sin(Angular.values[0])/cos(Angular.values[1]), cos(Angular.values[0])/cos(Angular.values[1]);
       Eigen::Map<Eigen::Vector3d> angular_vel_vector(Angular_vel.values);
-      /*
-      Eigen::Matrix3d T_be;
-      T_be<< 1.0, 0.0, -sin(Angular.values[1]),
-          0.0, cos(Angular.values[0]), sin(Angular.values[0])*cos(Angular.values[1]),
-          0.0,  -sin(Angular.values[0]), cos(Angular.values[0])*cos(Angular.values[1]);
-      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;
-      Eigen::Matrix3d T_be;
-      T_be<< cos(Angular.values[1]), 0.0, -cos(Angular.values[0])*sin(Angular.values[1]),
-          0.0, 1, sin(Angular.values[0]),
-          sin(Angular.values[1]),  0.0, cos(Angular.values[0])*cos(Angular.values[1]);
-      Eigen::Vector3d T_eb_pqr = T_be.inverse() * angular_vel_vector;  */
+     
       Eigen::Vector3d T_eb_pqr = T_eb * angular_vel_vector;
 
       Angular.values[0] = angluar_normalization(Angular.values[0] + T_eb_pqr(0) * dt);
       Angular.values[1] = angluar_normalization(Angular.values[1] + T_eb_pqr(1) * dt);
       Angular.values[2] = angluar_normalization(Angular.values[2] + T_eb_pqr(2) * dt);
-
-      /*
-      Angular.values[0] = angluar_normalization(Angular.values[0] + Angular_vel.values[0] * dt);
-      Angular.values[1] = angluar_normalization(Angular.values[1] + Angular_vel.values[1] * dt);
-      Angular.values[2] = angluar_normalization(Angular.values[2] + Angular_vel.values[2] * dt);  */
 
 
       double temp1 = Angular_vel[1] * Angular_vel[2] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
@@ -151,121 +137,63 @@ void Quadrotorpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control
 
 }
 
-void QuadrotorODE(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_,const oc::ODESolver::StateType& q, const oc::Control* u, oc::ODESolver::StateType& qdot)
-{
-  double *input_rotors_control = u->as<oc::RealVectorControlSpace::ControlType>()->values;
-  Eigen::Map<Eigen::Vector4d> U(input_rotors_control);
-  for (int k=0; k<4; ++k)
-  {
-    U(k) = U(k) * U(k);
-  }
-  U = allocation_matrix * U;
-
-//  qdot[0] = q[9] + sin(q[0])*tan(q[1])*q[10] + cos(q[0])*tan(q[1])*q[11];
-//  qdot[1] = cos(q[0])*q[10] - sin(q[0])*q[11];
-//  qdot[2] = q[10]*sin(q[0])/cos(q[1]) + q[11]*cos(q[0])/cos(q[1]);
-  qdot[0] = q[9];
-  qdot[1] = q[10];
-  qdot[2] = q[11];
-
-  qdot[3] = q[6];
-  qdot[4] = q[7];
-  qdot[5] = q[8];
-
-  qdot[6] = U[3] * (cos(q[0]) * cos(q[2]) * sin(q[1])
-      + sin(q[0]) * sin(q[2])) / vehicle_parameters_.mass_;
-
-  qdot[7] = U[3] * (cos(q[0]) * sin(q[2]) * sin(q[1])
-      - sin(q[0]) * cos(q[2])) / vehicle_parameters_.mass_;
-
-  qdot[8] = U[3] * cos(q[0]) * cos(q[1])/vehicle_parameters_.mass_ - vehicle_parameters_.gravity_;
-
-  qdot[9] = q[10] * q[11] * (vehicle_parameters_.inertia_(1,1) - vehicle_parameters_.inertia_(2,2))/vehicle_parameters_.inertia_(0,0)
-      + U[0]/vehicle_parameters_.inertia_(0,0);
-  qdot[10] = q[9] * q[11] * (vehicle_parameters_.inertia_(2,2) - vehicle_parameters_.inertia_(0,0))/vehicle_parameters_.inertia_(1,1)
-      + U[1]/vehicle_parameters_.inertia_(1,1);
-  qdot[11] = q[9] * q[10] * (vehicle_parameters_.inertia_(0,0) - vehicle_parameters_.inertia_(1,1))/vehicle_parameters_.inertia_(2,2)
-      + U[2]/vehicle_parameters_.inertia_(2,2);
-
-}
-
-
 
 /* define the controller fucntion */
 bool Lee_controller(rotors_control::LeePositionController lee_position_controller_ , const ob::State *state, const ob::State *heading_state, oc::Control *output)
 {
-   mav_msgs::EigenTrajectoryPoint trajectory_point;
-   rotors_control::EigenOdometry odometry_;
-   const ob::CompoundStateSpace::StateType& hs = *heading_state->as<ob::CompoundStateSpace::StateType>();
-   const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
-   const Eigen::Map<Eigen::Vector3d> position(hs.as<ob::RealVectorStateSpace::StateType>(1)->values);
-   const double yaw = hs.as<ob::RealVectorStateSpace::StateType>(0)->values[2];
+    mav_msgs::EigenTrajectoryPoint trajectory_point;
+    rotors_control::EigenOdometry odometry_;
+    const ob::CompoundStateSpace::StateType& hs = *heading_state->as<ob::CompoundStateSpace::StateType>();
+    const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
+    const Eigen::Map<Eigen::Vector3d> position(hs.as<ob::RealVectorStateSpace::StateType>(1)->values);
+    const double yaw = hs.as<ob::RealVectorStateSpace::StateType>(0)->values[2];
 
-   Eigen::Quaterniond orientation;
-   Eigen::Matrix3d Rx;
+    Eigen::Quaterniond orientation;
+    Eigen::Matrix3d Rx;
 
-   Eigen::Map<Eigen::Vector3d> current_angular(s.as<ob::RealVectorStateSpace::StateType>(0)->values);
-   Eigen::Map<Eigen::Vector3d> current_position(s.as<ob::RealVectorStateSpace::StateType>(1)->values);
-   Eigen::Map<Eigen::Vector3d> current_velocity(s.as<ob::RealVectorStateSpace::StateType>(2)->values);
-   Eigen::Map<Eigen::Vector3d> current_angular_vel(s.as<ob::RealVectorStateSpace::StateType>(3)->values);
-   Rx = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
-       * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
-       * Eigen::AngleAxisd(current_angular[0], Eigen::Vector3d::UnitX());
-   orientation = Rx;
-//   orientation.w() = cos(current_angular(0)/2.0)*cos(current_angular(1)/2.0)*cos(current_angular(2)/2.0)+
-//       sin(current_angular(0)/2.0)*sin(current_angular(1)/2.0)*sin(current_angular(2)/2.0);
-//   orientation.x() = sin(current_angular(0)/2.0)*cos(current_angular(1)/2.0)*cos(current_angular(2)/2.0)-
-//       cos(current_angular(0)/2.0)*sin(current_angular(1)/2.0)*sin(current_angular(2)/2.0);
-//   orientation.y() = cos(current_angular(0)/2.0)*sin(current_angular(1)/2.0)*cos(current_angular(2)/2.0)+
-//       sin(current_angular(0)/2.0)*cos(current_angular(1)/2.0)*sin(current_angular(2)/2.0);
-//   orientation.z() = cos(current_angular(0)/2.0)*cos(current_angular(1)/2.0)*sin(current_angular(2)/2.0)-
-//       sin(current_angular(0)/2.0)*sin(current_angular(1)/2.0)*cos(current_angular(2)/2.0);
+    Eigen::Map<Eigen::Vector3d> current_angular(s.as<ob::RealVectorStateSpace::StateType>(0)->values);
+    Eigen::Map<Eigen::Vector3d> current_position(s.as<ob::RealVectorStateSpace::StateType>(1)->values);
+    Eigen::Map<Eigen::Vector3d> current_velocity(s.as<ob::RealVectorStateSpace::StateType>(2)->values);
+    Eigen::Map<Eigen::Vector3d> current_angular_vel(s.as<ob::RealVectorStateSpace::StateType>(3)->values);
+    Rx = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
+        * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
+        * Eigen::AngleAxisd(current_angular[0], Eigen::Vector3d::UnitX());
+    orientation = Rx;
 
-   //std::cout<<"orientation : "<<orientation.w()<<" "<<orientation.x()<<" "<<orientation.y()<<" "<<orientation.z()<<std::endl;
-   odometry_.position = current_position;
-   odometry_.orientation = orientation;
-   odometry_.velocity = Rx.inverse()*current_velocity;
-   odometry_.angular_velocity = current_angular_vel;
-   Eigen::VectorXd *rotor_velocities = new(Eigen::VectorXd);
+    odometry_.position = current_position;
+    odometry_.orientation = orientation;
+    odometry_.velocity = Rx.inverse()*current_velocity;
+    odometry_.angular_velocity = current_angular_vel;
+    Eigen::VectorXd *rotor_velocities = new(Eigen::VectorXd);
 
-   trajectory_point.position_W = position;
-   trajectory_point.setFromYaw(yaw);
-   //trajectory_point.time_from_start_ns = 0;
-   lee_position_controller_.SetOdometry(odometry_);
-   lee_position_controller_.SetTrajectoryPoint(trajectory_point);
-   lee_position_controller_.CalculateRotorVelocities(rotor_velocities);
+    trajectory_point.position_W = position;
+    trajectory_point.setFromYaw(yaw);
+    //trajectory_point.time_from_start_ns = 0;
+    lee_position_controller_.SetOdometry(odometry_);
+    lee_position_controller_.SetTrajectoryPoint(trajectory_point);
+    lee_position_controller_.CalculateRotorVelocities(rotor_velocities);
 
-   output->as<oc::RealVectorControlSpace::ControlType>()->values[0] = (*rotor_velocities)(0);
-   output->as<oc::RealVectorControlSpace::ControlType>()->values[1] = (*rotor_velocities)(1);
-   output->as<oc::RealVectorControlSpace::ControlType>()->values[2] = (*rotor_velocities)(2);
-   output->as<oc::RealVectorControlSpace::ControlType>()->values[3] = (*rotor_velocities)(3);
-
-   delete rotor_velocities;
-   return true;
+    for(int i = 0; i < rotor_velocities->size(); i++)
+    {
+        output->as<oc::RealVectorControlSpace::ControlType>()->values[i] = (*rotor_velocities)(i);
+    }
+    delete rotor_velocities;
+    return true;
 
 }
 
 
 bool isStateValid(const oc::SpaceInformation *si, const octomap::OcTree *octree_, const ob::State *state)
 {
-  // extract the position and construct the UAV box
+  // extract the position and construct the MAV box
   const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
   Eigen::Map<Eigen::Vector3d> current_angular(s.as<ob::RealVectorStateSpace::StateType>(0)->values);
   Eigen::Map<Eigen::Vector3d> current_position(s.as<ob::RealVectorStateSpace::StateType>(1)->values);
- // std::cout <<"current position X:" <<current_position(0) <<"Y: "<<current_position(1)<<"Z: "<<current_position(2)<<std::endl;
-  //fcl::Box uav_box(0.3,0.3,0.3);
-  //std::shared_ptr<fcl::Box<float>> uav_box(new fcl::Box<float>(0.1,0.1,0.1));
   std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.5, 0.5, 0.3));
-//  fcl::BVHModel<fcl::OBBRSS<float>> uav_model;
-//  fcl::BVHModel<fcl::OBBRSS<float>> *uav_model_ptr = &uav_model;
   fcl::Matrix3d R;
   R = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
       * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
       * Eigen::AngleAxisd(current_angular[0], Eigen::Vector3d::UnitX());
-  //eulerToMatrix<double>(current_angular(0), current_angular(1), current_angular(2), R);
-  // Eigen::Map<Eigen::Matrix<float, 3, 1>> current_pos(current_position);
-  // fcl::generateBVHModel(uav_model, uav_box, fcl::Transform3f(R, current_position));
-  // fcl::Transform3f tf(R, current_position);
   fcl::Transform3d tf;
   tf.setIdentity();
   tf.linear() = R;
@@ -328,14 +256,15 @@ void OdometryCallback(const nav_msgs::OdometryConstPtr& odometry_msg) {
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "CL_RRT_test");
-  ros::NodeHandle nh;
-  ros::NodeHandle pnh("/pelican/lee_position_controller_nostop_node");
+  ros::init(argc, argv, "CL_RRT_MAV");
+  ros::NodeHandle nh, pnh("~");
+  std::string mav_name_;
+  bool ifget_ = ros::param::get("mav_name", mav_name_);
 
   // The IMU is used, to determine if the simulator is running or not.
   ros::Subscriber sub = nh.subscribe("imu", 10, &callback);
 
-  ros::Subscriber odometry_sub_ = nh.subscribe("odometry_sensor1/odometry", 1,
+  ros::Subscriber odometry_sub_ = nh.subscribe("ground_truth/odometry", 1,
                                OdometryCallback);
 
   ros::Publisher trajectory_pub =
@@ -399,6 +328,19 @@ int main(int argc, char **argv)
                   lee_position_controller_.controller_parameters_.angular_rate_gain_.z(),
                   &lee_position_controller_.controller_parameters_.angular_rate_gain_.z());
   rotors_control::GetVehicleParameters(pnh, &lee_position_controller_.vehicle_parameters_);
+  // nh.getParam("/"+mav_name_+"/position_gain/x", lee_position_controller_.controller_parameters_.position_gain_.x());
+  // nh.getParam("/"+mav_name_+"/position_gain/y", lee_position_controller_.controller_parameters_.position_gain_.y());
+  // nh.getParam("/"+mav_name_+"/position_gain/z", lee_position_controller_.controller_parameters_.position_gain_.z());
+  // nh.getParam("/"+mav_name_+"/velocity_gain/x", lee_position_controller_.controller_parameters_.velocity_gain_.x());
+  // nh.getParam("/"+mav_name_+"/velocity_gain/y", lee_position_controller_.controller_parameters_.velocity_gain_.y());
+  // nh.getParam("/"+mav_name_+"/velocity_gain/z", lee_position_controller_.controller_parameters_.velocity_gain_.z());
+  // nh.getParam("/"+mav_name_+"/attitude_gain/x", lee_position_controller_.controller_parameters_.attitude_gain_.x());
+  // nh.getParam("/"+mav_name_+"/attitude_gain/y", lee_position_controller_.controller_parameters_.attitude_gain_.y());
+  // nh.getParam("/"+mav_name_+"/attitude_gain/z", lee_position_controller_.controller_parameters_.attitude_gain_.z());
+  // nh.getParam("/"+mav_name_+"/angular_rate_gain/x", lee_position_controller_.controller_parameters_.angular_rate_gain_.x());
+  // nh.getParam("/"+mav_name_+"/angular_rate_gain/y", lee_position_controller_.controller_parameters_.angular_rate_gain_.y());
+  // nh.getParam("/"+mav_name_+"/angular_rate_gain/z", lee_position_controller_.controller_parameters_.angular_rate_gain_.z());
+  // rotors_control::GetVehicleParameters(nh, &lee_position_controller_.vehicle_parameters_);
   lee_position_controller_.InitializeParameters();
 
 
@@ -425,28 +367,23 @@ int main(int argc, char **argv)
   bounds.setHigh(M_PI);
   SO3->as<ob::RealVectorStateSpace>()->setBounds(bounds);
 
-  //ob::RealVectorBounds bounds(3);
   bounds.setLow(0, -15); bounds.setLow(1, -35); bounds.setLow(2, 0);
   bounds.setHigh(0, 35); bounds.setHigh(1, 15); bounds.setHigh(2, 50);
-//  bounds.setLow(0, -150); bounds.setLow(1, -350); bounds.setLow(2, 0);
-//  bounds.setHigh(0, 350); bounds.setHigh(1, 150); bounds.setHigh(2, 500);
   POS->as<ob::RealVectorStateSpace>()->setBounds(bounds);
 
-  //ob::RealVectorBounds bounds(3);
   bounds.setLow(-100);
   bounds.setHigh(100);
   velocity->as<ob::RealVectorStateSpace>()->setBounds(bounds);
 
- // ob::RealVectorBounds bounds(3);
   bounds.setLow(-100);
   bounds.setHigh(100);
   angular_vel->as<ob::RealVectorStateSpace>()->setBounds(bounds);
-
-
-
-  oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(stateSpace, 4));
+  
+  size_t rotors_size = lee_position_controller_.vehicle_parameters_.rotor_configuration_.rotors.size();
+  ROS_INFO("rotor size: %d", rotors_size);
+  oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(stateSpace, rotors_size));
   // set the bounds for the control space
-  ob::RealVectorBounds cbounds(4);
+  ob::RealVectorBounds cbounds(rotors_size);
   cbounds.setLow(0.0);
   cbounds.setHigh(1600);
   cspace->as<oc::RealVectorControlSpace>()->setBounds(cbounds);
@@ -454,13 +391,16 @@ int main(int argc, char **argv)
   // construct an instance of  space information from this control space
   oc::SpaceInformationPtr si(new oc::SpaceInformation(stateSpace, cspace));
 
-
   octomap::OcTree *octomap_;
   std::string octo_file ;
 
-  if (argc == 2 ) {
-    octo_file = argv[1];
-    ROS_INFO("read octomap file: %s", argv[1]);
+  // if (argc == 2 ) {
+  //   octo_file = argv[1];
+  //   ROS_INFO("read octomap file: %s", argv[1]);
+  // }
+  if (!pnh.getParam("map_path", octo_file)) {
+    ROS_ERROR("map is not loaded from ros parameter server");
+    abort();
   }
   octomap_ = new octomap::OcTree(octo_file);
   double tree_metricx, tree_metricy, tree_metricz;
@@ -475,8 +415,7 @@ int main(int argc, char **argv)
   // set state validity checking for this space
   si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, std::placeholders::_1));
 
-  /* statevaliditychecker check */
-
+  /* set start point */
   ob::State *check_state = si->allocState();
   ob::CompoundStateSpace::StateType& s = *check_state->as<ob::CompoundStateSpace::StateType>();
   double *check_angular= s.as<ob::RealVectorStateSpace::StateType>(0)->values;
@@ -486,51 +425,17 @@ int main(int argc, char **argv)
   check_angular[0] = 0.0; check_angular[1] = 0.0; check_angular[2] = 0.0;
   check_velocity[0] = 0.0; check_velocity[1] = 0.0; check_velocity[2] = 0.0;
   check_angular_vel[0] = 0.0; check_angular_vel[1] = 0.0; check_angular_vel[2] = 0.0;
-
-  /*
-  double check_posion_x[14] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-  double check_posion_y[14] = {-3.2, -3.3, -3.35, -3.4, -3.45, -3.55, -3.65, -3.75, -3.8, -3.85, -3.9, -4, -4.1, -4.2};
-  double check_posion_z[14] = {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-
-  for(int i = 0; i < 14; ++i)
-  {
-  check_position[0] = check_posion_x[i];
-  check_position[1] = check_posion_y[i];
-  check_position[2] = check_posion_z[i];
-
-  std::cout << "set state position: " << check_position[0] <<" "
-            << check_position[1] <<" " <<check_position[2]<<std::endl;
-  std::cout << "check state position: " << s.as<ob::RealVectorStateSpace::StateType>(1)->values[0] <<" "
-            << s.as<ob::RealVectorStateSpace::StateType>(1)->values[1] <<" " <<s.as<ob::RealVectorStateSpace::StateType>(1)->values[2]<<std::endl;
-
-  if(si->isValid(check_state))
-    std::cout << "check result: valid state" <<std::endl;
-  else
-    std::cout << "check result: invalid state" <<std::endl;
-
-  if(simple_isStateValid(check_state, octomap_))
-    std::cout << "simple check result: valid state" <<std::endl;
-  else
-    std::cout << "simple check result: invalid state" <<std::endl;
-
-  }
-  */
-
   check_position[0] = 0.0;
   check_position[1] = 0.0;
   check_position[2] = 1.0;
 
   // set the state propagation routine
-  si->setStatePropagator(std::bind(&Quadrotorpropagate, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
+  si->setStatePropagator(std::bind(&Hexacopterpropagate, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
           std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
-//  ompl::control::ODESolverPtr odeSolver (new oc::ODEBasicSolver<> (si, std::bind(&QuadrotorODE, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, std::placeholders::_1,
-//                                                                                             std::placeholders::_2, std::placeholders::_3)));
-//  si->setStatePropagator(oc::ODESolver::getStatePropagator(odeSolver));
   si->setPropagationStepSize(0.02);
   si->setMinMaxControlDuration(1, 10);
   si->setStateValidityCheckingResolution(0.25);
   si->setup();
-
 
   ob::State *heading_state = stateSpace->allocState();
   ob::CompoundStateSpace::StateType& hs = *heading_state->as<ob::CompoundStateSpace::StateType>();
@@ -542,17 +447,14 @@ int main(int argc, char **argv)
   heading_position[0] = 2.0; heading_position[1] = -27.0; heading_position[2] = 15.0;
   heading_velocity[0] = 0.0; heading_velocity[1] = 0.0; heading_velocity[2] = 0.0;
   heading_angular_vel[0] = 0.0; heading_angular_vel[1] = 0.0; heading_angular_vel[2] = 0.0;
- // std::vector<ob::State *> pstates;
- // ob::PlannerPtr planner(new rotors_planner::CL_rrt(si));
   ob::ScopedState<ob::CompoundStateSpace> start(stateSpace);
   start = *check_state;
-  //start.random();
+  // start.random();
   ob::ScopedState<ob::CompoundStateSpace> goal(stateSpace);
-  //goal.random();
+  // goal.random();
   goal = *heading_state;
   // create a problem instance
   ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
-
   // set the start and goal states
   pdef->setStartAndGoalStates(start, goal, 0.2);
 
@@ -571,11 +473,10 @@ int main(int argc, char **argv)
   si->printSettings(std::cout);
   // print the problem settings
   pdef->print(std::cout);
-//  ob::State *goal_state = pdef->getGoal()->as<ob::GoalState>()->getState();
-//  ob::CompoundStateSpace::StateType& goals = *goal_state->as<ob::CompoundStateSpace::StateType>();
-//  double *test_goal = goals.as<ob::RealVectorStateSpace::StateType>(1)->values;
-//  std::cout<<"goal_state: "<<test_goal[0]<<" "<<test_goal[1]<<" "<<test_goal[2]<<std::endl;
-
+  // ob::State *goal_state = pdef->getGoal()->as<ob::GoalState>()->getState();
+  // ob::CompoundStateSpace::StateType& goals = *goal_state->as<ob::CompoundStateSpace::StateType>();
+  // double *test_goal = goals.as<ob::RealVectorStateSpace::StateType>(1)->values;
+  // std::cout<<"goal_state: "<<test_goal[0]<<" "<<test_goal[1]<<" "<<test_goal[2]<<std::endl;
 
   // attempt to solve the problem within one second of planning time
   ob::PlannerTerminationCondition ptc = ob::timedPlannerTerminationCondition(1.0);
@@ -583,101 +484,17 @@ int main(int argc, char **argv)
 
   if (solved)
       {
-          // get the goal representation from the problem definition (not the same as the goal state)
-          // and inquire about the found path
-         // ob::PathPtr path = pdef->getSolutionPath();
-          std::cout << "Found solution:" << std::endl;
-
-          // print the path to screen
-          //path->print(std::cout);
+        // get the goal representation from the problem definition (not the same as the goal state)
+        // and inquire about the found path
+        // ob::PathPtr path = pdef->getSolutionPath();
+        std::cout << "Found solution:" << std::endl;
+        // print the path to screen
+        // path->print(std::cout);
       }
    else
       std::cout << "No solution found" << std::endl;
   std::vector<rotors_planner::Motion *> solution_path;
   solution_path = planner->get_solution_motions();
-
-//  int index = solution_path.size()- 100;
-//  std::cout<<"solution states: "<<solution_path.size()<<std::endl;
-//  std::cout<<"new current state index: "<<index<<std::endl;
-//  ob::PlannerTerminationCondition ptc2 = ob::timedPlannerTerminationCondition(2.0);
-
-  /*
-  solved = planner->loop_solve(ptc2, solution_path[index]->state);
-  solution_path.clear();
-  solution_path = planner->get_solution_motions();
-  if (solved)
-      {
-          // get the goal representation from the problem definition (not the same as the goal state)
-          // and inquire about the found path
-          ob::PathPtr path = pdef->getSolutionPath();
-          std::cout << "Found solution:" << std::endl;
-
-          // print the path to screen
-          path->print(std::cout);
-      }
-   else
-      std::cout << "No solution found" << std::endl;
-  */
-
-  /*
-  std::vector<ob::State *> pstates;
-  std::vector<oc::Control *> pcontrols;
-  if(planner->propagateuntilstop(check_state, heading_state, pstates, pcontrols))
-  {
-    size_t p = 0;
-    for(; p < pstates.size(); ++p)
-    {
-      ob::CompoundStateSpace::StateType *ps = pstates[p]->as<ob::CompoundStateSpace::StateType>();
-      std::cout<<p<<" state position: "<<ps->as<ob::RealVectorStateSpace::StateType>(1)->values[0] <<" "
-              << ps->as<ob::RealVectorStateSpace::StateType>(1)->values[1] <<" " <<ps->as<ob::RealVectorStateSpace::StateType>(1)->values[2]<<std::endl;
-    }
-  }
-  */
-
-  /*
-  // create a start state
-  ob::ScopedState<ob::RealVectorStateSpace> start(stateSpace);
-
-  // create a goal state
-  ob::ScopedState<ob::CompoundStateSpace> goal(start);
-
-  // create a problem instance
-  ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
-
-  // set the start and goal states
-  pdef->setStartAndGoalStates(start, goal, 0.1);
-
-  // create a planner for the defined space
-  ob::PlannerPtr planner(new rotors_planner::CL_rrt(si));
-
-  // set the problem we are trying to solve for the planner
-  planner->setProblemDefinition(pdef);
-
-  // perform setup steps for the planner
-  planner->setup();
-
-  // print the settings for this space
-  si->printSettings(std::cout);
-  // print the problem settings
-  pdef->print(std::cout);
-
-  // attempt to solve the problem within one second of planning time
-  ob::PlannerStatus solved = planner->solve(10.0);
-
-  if (solved)
-      {
-          // get the goal representation from the problem definition (not the same as the goal state)
-          // and inquire about the found path
-          ob::PathPtr path = pdef->getSolutionPath();
-          std::cout << "Found solution:" << std::endl;
-
-          // print the path to screen
-          path->print(std::cout);
-      }
-      else
-          std::cout << "No solution found" << std::endl;
-
-   */
 
   ROS_INFO("Start publishing trajectory_pub planned trajectory.");
 
@@ -701,7 +518,6 @@ int main(int argc, char **argv)
 //              <<  wp.position(1) <<  " " <<  wp.position(2)  << std::endl;
 
     time_from_start_ns += static_cast<int64_t>(wp.waiting_time * kNanoSecondsInSecond);
-
     mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &msg->points[i]);
   }
 
@@ -778,7 +594,6 @@ int main(int argc, char **argv)
     line_strip.points.push_back(p);
   }
 
-
   octomap_msgs::Octomap octo_msg;
   octo_msg.header.frame_id = "/world";
   octomap_msgs::binaryMapToMsg(*octomap_,octo_msg);
@@ -793,9 +608,11 @@ int main(int argc, char **argv)
   update_velocity[0] = 0.0; update_velocity[1] = 0.0; update_velocity[2] = 0.0;
   update_angular_vel[0] = 0.0; update_angular_vel[1] = 0.0; update_angular_vel[2] = 0.0;
   Eigen::Map<Eigen::Vector3d> target_pos(heading_position);
-  //ros::Rate rate(0.5);
+
+  // ros::Rate rate(0.5);
+  // begin real time plan
   while(ros::ok()){
-    // update current uav state
+    // update current mav state
     ros::spinOnce();
     Eigen::Vector3d update_position_vector = current_odometry.position;
     update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
@@ -808,27 +625,25 @@ int main(int argc, char **argv)
     Eigen::Vector3d position_error = current_odometry.position -target_pos;
     if(std::sqrt(position_error.dot(position_error)) < 2*planner->getPathdeviation())
       break;
-    // begin real time plan
+    
     ob::PlannerTerminationCondition ptc_rt = ob::timedPlannerTerminationCondition(1.0);
     solved = planner->loop_solve(ptc_rt, update_state);
-    //solved = planner->loop_solve(ptc_rt, heading_state);
 
-    // propagate again
-    // attention: current state is update again
-    // and evaluate delta_t meanwhile
-    // prune the solution path according current state
+    /* propagate again
+       attention: current state is update again
+       and evaluate delta_t meanwhile
+       prune the solution path according current state */
     ros::spinOnce();
     update_position_vector = current_odometry.position;
     update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
-    //planner->recordSolution();
+    // planner->recordSolution();
     OMPL_INFORM("after plannnig state: %lf %lf %lf",update_position_vector[0], update_position_vector[1], update_position_vector[2]);
     if(planner->prune_path(update_state))
     {
     solution_path.clear();
     solution_path = planner->get_solution_motions();
-
     // waypoints interface
-    //std::vector<WaypointWithTime> update_waypoints = planner->waypoints;
+    // std::vector<WaypointWithTime> update_waypoints = planner->waypoints;
     ROS_INFO("Read %d waypoints.", (int) planner->waypoints.size());
     trajectory_msgs::MultiDOFJointTrajectoryPtr rt_msg(new trajectory_msgs::MultiDOFJointTrajectory);
     rt_msg->header.stamp = ros::Time::now();
@@ -841,11 +656,7 @@ int main(int argc, char **argv)
       trajectory_point.position_W = wp.position;
       trajectory_point.setFromYaw(wp.yaw);
       trajectory_point.time_from_start_ns = time_from_start_ns;
-//      std::cout << "Waypoint XYZ: " << wp.position(0) << " "
-//                <<  wp.position(1) <<  " " <<  wp.position(2)  << std::endl;
-
       time_from_start_ns += static_cast<int64_t>(wp.waiting_time * kNanoSecondsInSecond);
-
       mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &rt_msg->points[i]);
     }
     ROS_INFO("waypoint msg complete");
@@ -863,7 +674,7 @@ int main(int argc, char **argv)
       p.x = point_position[0];
       p.y = point_position[1];
       p.z = point_position[2];
-      std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
+      // std::cout<<"point: "<<p.x<<" "<<p.y<<" "<<p.z<<std::endl;
       if(is_pro_neighbor && solution_path[i]->commit_protect)
         line_protect.points.push_back(p);
       else
@@ -876,7 +687,7 @@ int main(int argc, char **argv)
         line_strip.points.push_back(p);
       }
     }
-    //ROS_INFO("line strip complete");
+    // ROS_INFO("line strip complete");
     std::stack<rotors_planner::Motion *> box;
     box.push(planner->get_root_node());
 
@@ -945,7 +756,6 @@ int main(int argc, char **argv)
 
     marker_pub.publish(line_actual);
     octomap_pub.publish(octo_msg);
-    ros::spinOnce();
     //rate.sleep();
   }
 
