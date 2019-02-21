@@ -1,0 +1,17 @@
+# target waypoint corridinate
+target_x: 2.0
+target_y: -27.0
+target_z: 5.0
+target_yaw: 0.0
+
+workspace:
+  min_x: -15.0
+  max_x: 35.0
+  min_y: -35.0
+  max_y: 15.0
+  min_z: 0.0
+  max_z: 50.0
+
+propagation:
+  step_size: 0.01
+  waypoint_interval: 0.02

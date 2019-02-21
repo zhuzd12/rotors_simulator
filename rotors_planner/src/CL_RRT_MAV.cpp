@@ -66,9 +66,9 @@ double angluar_normalization(double angular)
 }
 
 /* define Hexacopter dynamic model */
-void Hexacopterpropagate(const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_, const oc::SpaceInformationPtr si, const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
+void Hexacopterpropagate(double step_size, const Eigen::Matrix4Xd allocation_matrix, rotors_control::VehicleParameters vehicle_parameters_, const oc::SpaceInformationPtr si, const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
 {
-    static double timestep = .01;
+    static double timestep = step_size;
     int nsteps = ceil(duration / timestep);
     double dt = duration / nsteps;
 
@@ -367,8 +367,17 @@ int main(int argc, char **argv)
   bounds.setHigh(M_PI);
   SO3->as<ob::RealVectorStateSpace>()->setBounds(bounds);
 
-  bounds.setLow(0, -15); bounds.setLow(1, -35); bounds.setLow(2, 0);
-  bounds.setHigh(0, 35); bounds.setHigh(1, 15); bounds.setHigh(2, 50);
+  double workspace_x_min, workspace_x_max, workspace_y_min, workspace_y_max, workspace_z_min, workspace_z_max;
+  pnh.getParam("workspace/min_x", workspace_x_min);
+  pnh.getParam("workspace/max_x", workspace_x_max);
+  pnh.getParam("workspace/min_y", workspace_y_min);
+  pnh.getParam("workspace/max_y", workspace_y_max);
+  pnh.getParam("workspace/min_z", workspace_z_min);
+  pnh.getParam("workspace/max_z", workspace_z_max);
+
+
+  bounds.setLow(0, workspace_x_min); bounds.setLow(1, workspace_y_min); bounds.setLow(2, workspace_z_min);
+  bounds.setHigh(0, workspace_x_max); bounds.setHigh(1, workspace_y_max); bounds.setHigh(2, workspace_z_max);
   POS->as<ob::RealVectorStateSpace>()->setBounds(bounds);
 
   bounds.setLow(-100);
@@ -416,6 +425,11 @@ int main(int argc, char **argv)
   si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, std::placeholders::_1));
 
   /* set start point */
+  double target_x, target_y, target_z, target_yaw;
+  pnh.getParam("target_x", target_x);
+  pnh.getParam("target_y", target_y);
+  pnh.getParam("target_z", target_z);
+  pnh.getParam("target_yaw", target_yaw);
   ob::State *check_state = si->allocState();
   ob::CompoundStateSpace::StateType& s = *check_state->as<ob::CompoundStateSpace::StateType>();
   double *check_angular= s.as<ob::RealVectorStateSpace::StateType>(0)->values;
@@ -430,9 +444,12 @@ int main(int argc, char **argv)
   check_position[2] = 1.0;
 
   // set the state propagation routine
-  si->setStatePropagator(std::bind(&Hexacopterpropagate, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
+  double step_size, waypoint_interval;
+  pnh.getParam("propagation/step_size", step_size);
+  pnh.getParam("propagation/waypoint_interval", waypoint_interval);
+  si->setStatePropagator(std::bind(&Hexacopterpropagate, step_size, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
           std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
-  si->setPropagationStepSize(0.02);
+  si->setPropagationStepSize(waypoint_interval);
   si->setMinMaxControlDuration(1, 10);
   si->setStateValidityCheckingResolution(0.25);
   si->setup();
@@ -443,8 +460,8 @@ int main(int argc, char **argv)
   double *heading_position = hs.as<ob::RealVectorStateSpace::StateType>(1)->values;
   double *heading_velocity = hs.as<ob::RealVectorStateSpace::StateType>(2)->values;
   double *heading_angular_vel = hs.as<ob::RealVectorStateSpace::StateType>(3)->values;
-  heading_angular[0] = 0.0; heading_angular[1] = 0.0; heading_angular[2] = 0.0;
-  heading_position[0] = 2.0; heading_position[1] = -27.0; heading_position[2] = 15.0;
+  heading_angular[0] = 0.0; heading_angular[1] = 0.0; heading_angular[2] = target_yaw;
+  heading_position[0] = target_x; heading_position[1] = target_y; heading_position[2] = target_z;
   heading_velocity[0] = 0.0; heading_velocity[1] = 0.0; heading_velocity[2] = 0.0;
   heading_angular_vel[0] = 0.0; heading_angular_vel[1] = 0.0; heading_angular_vel[2] = 0.0;
   ob::ScopedState<ob::CompoundStateSpace> start(stateSpace);

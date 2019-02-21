@@ -572,7 +572,8 @@ bool CL_rrt::prune_path(const ob::State *state_rt)
   siC_->nullControl(current_motion->control);
   Motion *new_rootmotion = nn_t->nearest(current_motion);
   waypoints.clear();
-  double temp_t = 1.0;
+  // double temp_t = 1.0;
+  double temp_t = siC_->getPropagationStepSize();
 
   /* connect current state to current path */
   if(si_->distance(current_motion->state, new_rootmotion->state) > path_resolution)
@@ -1072,7 +1073,8 @@ void CL_rrt::recordSolution()
     og::PathGeometric &p = *(pdef_->getSolutionPath()->as<og::PathGeometric>());
    // std::static_pointer_cast<og::PathGeometric> p = pdf_->getSolutionPath();
     p.interpolate();
-    double temp_t = 1.0;
+    // double temp_t = 1.0;
+    double temp_t = siC_->getPropagationStepSize();
     //const float DEG_2_RAD = M_PI / 180.0;
     for (std::size_t i = 0 ; i < p.getStateCount() ; ++i)
           {
