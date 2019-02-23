@@ -13,5 +13,14 @@ workspace:
   max_z: 2.5
 
 propagation:
-  step_size: 0.01
-  waypoint_interval: 0.02
+  use_propagation: False
+  step_size: 0.05
+  waypoint_interval: 0.10
+  max_loop: 200
+
+planner:
+  initial_plan_time: 20.0
+  loop_plan_time: 1.0
+  path_deviation: 0.2
+  path_resolution: 0.25
+  sample_connect_range: 0.5

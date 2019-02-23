@@ -173,7 +173,7 @@ ob::PlannerStatus CL_rrt::solve(const ob::PlannerTerminationCondition &ptc)
   checkValidity();
   ob::Goal *goal = pdef_->getGoal().get();
   ob::State *goal_state = pdef_->getGoal().get()->as<ob::GoalState>()->getState();
- // auto *goal_s = dynamic_cast <ob::GoalSampleableRegion *>(goal);
+  // auto *goal_s = dynamic_cast <ob::GoalSampleableRegion *>(goal);
 
   while(const ob::State *st = pis_.nextStart())
   {

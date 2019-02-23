@@ -63,6 +63,14 @@ add_library(cl_rrt
 target_link_libraries(cl_rrt ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(cl_rrt ${catkin_EXPORTED_TARGETS})
 
+add_library(cl_rrt_star
+  src/library/cl_rrt_star.cpp
+  include/rotors_planner/modelmotionvalidator.cpp
+  include/rotors_planner/discretedmotionvalidator.cpp
+)
+target_link_libraries(cl_rrt_star ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
+add_dependencies(cl_rrt_star ${catkin_EXPORTED_TARGETS})
+
 add_executable(RRT_planner src/RRT_planner.cpp)
 target_link_libraries(RRT_planner ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 add_dependencies(RRT_planner ${catkin_EXPORTED_TARGETS})
@@ -88,7 +96,18 @@ target_link_libraries(CL_RRT_MAV cl_rrt
     ${CCD_LIBRARIES})
 add_dependencies(CL_RRT_MAV ${catkin_EXPORTED_TARGETS})
 
+add_executable(CL_RRTstar_MAV src/CL_RRTstar_MAV.cpp)
+target_link_libraries(CL_RRTstar_MAV cl_rrt_star
+    ${catkin_LIBRARIES} 
+    ${OMPL_LIBRARIES} 
+    ${FCL_LIBRARIES}
+    ${CCD_LIBRARIES})
+add_dependencies(CL_RRTstar_MAV ${catkin_EXPORTED_TARGETS})
+
 install(TARGETS cl_rrt
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+)
+install(TARGETS cl_rrt_star
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )
 
