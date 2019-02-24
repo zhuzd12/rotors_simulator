@@ -472,13 +472,16 @@ int main(int argc, char **argv)
 //   si->setMinMaxControlDuration(1, 10);
 
   double path_deviation, initial_plan_time, path_resolution, sample_max_range, loop_plan_time, propagate_time;
-  bool use_propagation;
+  bool use_propagation, useKNearest;
+  double path_replan_deviation;
   pnh.getParam("planner/path_deviation", path_deviation);
   pnh.getParam("planner/path_resolution", path_resolution);
   pnh.getParam("planner/sample_connect_range", sample_max_range);
   pnh.getParam("planner/initial_plan_time", initial_plan_time);
   pnh.getParam("planner/loop_plan_time", loop_plan_time);
   pnh.getParam("planner/use_propagation", use_propagation);
+  pnh.getParam("planner/setKNearest", useKNearest);
+  pnh.getParam("planner/path_replan_deviation", path_replan_deviation);
   
   StatePropagatorFn model = std::bind(&Hexacopterpropagate, step_size, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
@@ -534,6 +537,9 @@ int main(int argc, char **argv)
   rotors_planner_rrtstar::samplercleanerFn svc = ODEstate_to_position_sampler;
   planner->setSampleCleanerFn(svc);
   planner->setRange(sample_max_range);
+  planner->setKNearest(useKNearest);
+  planner->setReplanPathDeviation(path_replan_deviation);
+  planner->setSampleDimension(3);
   // planner->setMinRange(0.20);
   // planner->setController(std::bind(&Lee_controller, lee_position_controller_, std::placeholders::_1, std::placeholders::_2,std::placeholders::_3));
   planner->setProblemDefinition(pdef);
@@ -553,7 +559,7 @@ int main(int argc, char **argv)
         ob::PathPtr path = pdef->getSolutionPath();
         std::cout << "Found solution:" << std::endl;
         // print the path to screen
-        path->print(std::cout);
+        // path->print(std::cout);
       }
    else
       std::cout << "No solution found" << std::endl;
@@ -694,16 +700,148 @@ int main(int argc, char **argv)
   update_angular_vel[0] = 0.0; update_angular_vel[1] = 0.0; update_angular_vel[2] = 0.0;
   Eigen::Map<Eigen::Vector3d> target_pos(heading_position);
 
+  std::shared_ptr<ompl::geometric::PathGeometric> real_time_best_path;
    while (ros::ok()) {
-    // publish msg
+    
     // trajectory_pub.publish(msg);
+    ros::spinOnce();
+    Eigen::Vector3d update_position_vector = current_odometry.position;
+    update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
+    
+    geometry_msgs::Point p_f;
+    p_f.x = update_position_vector[0];
+    p_f.y = update_position_vector[1];
+    p_f.z = update_position_vector[2];
+    line_actual.points.push_back(p_f);
+
+    OMPL_INFORM("before planning state: %lf %lf %lf",update_position_vector[0], update_position_vector[1], update_position_vector[2]);
+    Eigen::Vector3d position_error = current_odometry.position -target_pos;
+    if(std::sqrt(position_error.dot(position_error)) < 2*path_deviation)
+      break;
+
+    ob::PlannerTerminationCondition ptc_rt = ob::timedPlannerTerminationCondition(loop_plan_time);
+    pdef->clearStartStates();
+    pdef->addStartState(update_state);
+    planner->setProblemDefinition(pdef);
+    solved = planner->solve(ptc_rt);
+
+    ros::spinOnce();
+    update_position_vector = current_odometry.position;
+    update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
+    OMPL_INFORM("after plannnig state: %lf %lf %lf",update_position_vector[0], update_position_vector[1], update_position_vector[2]);
+
+    if(planner->rePropagation(update_state, real_time_best_path) or true)
+    {
+        // ob::PathPtr path = pdef->getSolutionPath();
+        // og::PathGeometric *best_path = path->as<og::PathGeometric>();
+        std::vector< ob::State *> solution_states = real_time_best_path->getStates();
+        // get trajectory msg from solution path
+        ROS_INFO("Read %d waypoints.", int(solution_states.size()));
+        trajectory_msgs::MultiDOFJointTrajectoryPtr msg(new trajectory_msgs::MultiDOFJointTrajectory);
+        msg->header.stamp = ros::Time::now();
+        msg->points.resize(solution_states.size());
+        msg->joint_names.push_back("base_link");
+        int64_t time_from_start_ns = 0;
+        for (size_t i = 0; i < solution_states.size(); ++i) {
+            ob::State * current_s = solution_states[i];
+            ob::CompoundStateSpace::StateType& c_s = *current_s->as<ob::CompoundStateSpace::StateType>();
+            const Eigen::Map<Eigen::Vector3d> c_position(c_s.as<ob::RealVectorStateSpace::StateType>(1)->values);
+            const double c_yaw = c_s.as<ob::RealVectorStateSpace::StateType>(0)->values[2];
+            
+            mav_msgs::EigenTrajectoryPoint trajectory_point;
+            trajectory_point.position_W = c_position;
+            trajectory_point.setFromYaw(c_yaw);
+            // std::cout <<"waypoint position: "<<c_position(0) <<" "<<c_position(1)<<" "<<c_position(2)<<std::endl;
+            // std::cout<<"waypoint yaw: "<<c_yaw<<std::endl;
+            trajectory_point.time_from_start_ns = time_from_start_ns;
+
+            time_from_start_ns += 1.0;
+            mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &msg->points[i]);
+        }
+
+        //update marker line_strip
+        line_protect.points.clear();
+        line_strip.points.clear();
+        line_tree.points.clear();
+        for (size_t i = 0; i < solution_states.size(); ++i)
+        {
+            ob::State * current_s = solution_states[i];
+            ob::CompoundStateSpace::StateType& ps = *current_s->as<ob::CompoundStateSpace::StateType>();
+            double *point_position = ps.as<ob::RealVectorStateSpace::StateType>(1)->values;
+            geometry_msgs::Point p;
+            p.x = point_position[0];
+            p.y = point_position[1];
+            p.z = point_position[2];
+            line_strip.points.push_back(p);
+        }
+
+        //update marker line_tree
+        std::stack<rotors_planner_rrtstar::Motion *> box;
+        box.push(planner->get_root_node());
+        while (!box.empty()) {
+        rotors_planner_rrtstar::Motion *current_addmotion = box.top();
+        box.pop();
+        ob::CompoundStateSpace::StateType& ps = *current_addmotion->state->as<ob::CompoundStateSpace::StateType>();
+        double *point_position = ps.as<ob::RealVectorStateSpace::StateType>(1)->values;
+        geometry_msgs::Point p;
+        p.x = point_position[0];
+        p.y = point_position[1];
+        p.z = point_position[2];
+
+        for(auto &new_addmotion :current_addmotion->children)
+        {
+            ob::CompoundStateSpace::StateType& ps_c = *new_addmotion->state->as<ob::CompoundStateSpace::StateType>();
+            double *point_position_c = ps_c.as<ob::RealVectorStateSpace::StateType>(1)->values;
+            geometry_msgs::Point p_c;
+            p_c.x = point_position_c[0];
+            p_c.y = point_position_c[1];
+            p_c.z = point_position_c[2];
+            line_tree.points.push_back(p);
+            line_tree.points.push_back(p_c);
+            box.push(new_addmotion);
+            }
+        }
+    }
+    else // plan failed and send stop trajectory
+    {
+        ROS_ERROR("planning failed");
+        trajectory_msgs::MultiDOFJointTrajectoryPtr rt_msg(new trajectory_msgs::MultiDOFJointTrajectory);
+        rt_msg->header.stamp = ros::Time::now();
+        rt_msg->points.resize(1);
+        rt_msg->joint_names.push_back("base_link");
+        mav_msgs::EigenTrajectoryPoint trajectory_point;
+        trajectory_point.position_W = update_position_vector;
+        trajectory_point.setFromYaw(0);
+        trajectory_point.time_from_start_ns = 0.0;
+        mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &rt_msg->points[0]);
+        trajectory_pub.publish(rt_msg);
+    }
+
+    // update marker line actual
+    geometry_msgs::Point p_e;
+    p_e.x = update_position_vector[0];
+    p_e.y = update_position_vector[1];
+    p_e.z = update_position_vector[2];
+    line_actual.points.push_back(p_e);
+
+    // publish msg
     marker_pub.publish(points);
     marker_pub.publish(line_strip);
+    marker_pub.publish(line_tree);
+    marker_pub.publish(line_actual);
     octomap_pub.publish(octo_msg);
     ros::spinOnce();
-    ros::Duration(0.1).sleep();
   }
+  
+  // free memory
+  if(check_state)
+    si->freeState(check_state);
+  if(heading_state)
+    si->freeState(heading_state);
+    if(update_state)
+    si->freeState(update_state);
 
+  ros::shutdown();
   return 0;
 }
 

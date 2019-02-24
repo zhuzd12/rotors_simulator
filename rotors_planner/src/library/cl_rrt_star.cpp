@@ -111,9 +111,12 @@ void CL_RRTstar::setup()
 
     // Get the measure of the entire space:
     prunedMeasure_ = si_->getSpaceMeasure();
+    // std::cout<<"##########"<<prunedMeasure_<<std::endl;
 
     // Calculate some constants:
     calculateRewiringLowerBounds();
+    std::cout<<"##########"<<k_rrt_<<std::endl;
+    std::cout<<"##########"<<r_rrt_<<std::endl;
 }
 
 void CL_RRTstar::clear()
@@ -136,6 +139,209 @@ void CL_RRTstar::clear()
     prunedMeasure_ = 0.0;
 }
 
+int CL_RRTstar::onlinePruneTree(const ob::State * current_state)
+{
+    if(plan_loop_ == 0 or !rePropagation_flag_)
+    {
+        auto *motion = new Motion(si_);
+        si_->copyState(motion->state, current_state);
+        if(nn_)
+            nn_->clear();
+        // newly added
+        motion->c_total = 0.0;
+        ob::Goal *goal = pdef_->getGoal().get();
+        goal->isSatisfied(motion->state, &motion->low_bound);
+        motion->cost = opt_->identityCost();
+        nn_->add(motion);
+        startMotions_.clear();
+        startMotions_.push_back(motion);
+        bestGoalMotion_ = nullptr;
+        bestCost_ = opt_->infiniteCost();
+        prunedCost_ = opt_->infiniteCost();
+        approxGoalMotion_ = nullptr;
+        approxDist_= std::numeric_limits<double>::infinity();
+        goalMotions_.clear();
+        return 0;
+    }
+
+    // find the new root node which is nearest to current_state
+    auto *cmotion = new Motion(si_);
+    si_->copyState(cmotion->state, current_state);
+    Motion *nmotion = nn_->nearest(cmotion);
+    OMPL_INFORM("find nearest node and distance: %lf", si_->distance(current_state, nmotion->state));
+
+    // find index of new root node in current best solution
+    Motion *oldSolution = nullptr;
+    if (bestGoalMotion_)
+    {
+        oldSolution = bestGoalMotion_;
+    }
+    else if (approxGoalMotion_)
+    {
+        oldSolution = approxGoalMotion_;
+    }
+    Motion *iterMotion = oldSolution;
+    Motion *new_root_motion = nullptr;
+    bool find_root = false;
+    double min_dis = std::numeric_limits<double>::infinity();
+    while (iterMotion != nullptr)
+    {
+        if(si_->distance(iterMotion->state, nmotion->state) < min_dis)
+        {
+            min_dis = si_->distance(iterMotion->state, nmotion->state);
+            new_root_motion = iterMotion;
+        }
+        if(iterMotion == nmotion)
+        {
+            find_root = true;
+            min_dis = 0.0;
+            break;
+        }       
+        // min_dis = std::min(min_dis, si_->distance(iterMotion->state, nmotion->state));
+        iterMotion = iterMotion->parent;
+    }
+    OMPL_INFORM("min distance between nearest motion and old solution path: %lf", min_dis);
+
+    // clear pdef_
+    OMPL_INFORM("old solutions num: %d", pdef_->getSolutionCount());
+    // std::vector< ob::PlannerSolution > solutions = pdef_->getSolutions();
+    pdef_->clearSolutionPaths();
+    // for(int i=0 ; i<pdef_->getSolutionCount(); i++)
+    // {
+    //     ob::PlannerSolution current_solution = solutions[i];
+    //     ob::PathPtr current_path = current_solution.path_;
+    //     ompl::geometric::PathGeometric *current_geo_path = current_path->as<og::PathGeometric>();
+    //     delete current_geo_path;
+    // }
+
+    if((!find_root && min_dis > 0.50))
+    {
+        OMPL_INFORM("previous info can be discarded totally");
+        freeMemory();
+        int old_nn_num = nn_->size();
+        if(nn_)
+            nn_->clear();
+        auto *total_new_motion = new Motion(si_);
+        si_->copyState(total_new_motion->state, current_state);
+        total_new_motion->c_total = 0.0;
+        ob::Goal *goal = pdef_->getGoal().get();
+        goal->isSatisfied(total_new_motion->state, &total_new_motion->low_bound);
+        total_new_motion->cost = opt_->identityCost();
+        nn_->add(total_new_motion);
+        bestGoalMotion_= nullptr;
+        bestCost_ = opt_->infiniteCost();
+        prunedCost_ = opt_->infiniteCost();
+        approxGoalMotion_ = nullptr;
+        approxDist_= std::numeric_limits<double>::infinity();
+        goalMotions_.clear();
+        startMotions_.clear();
+        startMotions_.push_back(total_new_motion);
+        return old_nn_num;
+    }
+    else
+    {
+        /* prune tree from nmotion */
+        // do not change bestGoalMotion_ and approxGoalMotion_ for we assure that the agent is 
+        // following the right solution after calling repropagation function
+        OMPL_INFORM("previous info can be utilized partially");
+        // The queue of Motions to process:
+        unsigned int numPruned = 0;
+        std::queue<Motion *, std::deque<Motion *>> motionQueue;
+        std::queue<Motion *, std::deque<Motion *>> leavesToPrune;
+        std::queue<Motion *, std::deque<Motion *>> saveToPrune;
+        OMPL_INFORM("nn size: %d", int(nn_->size()));
+        // Clear the NN structure:
+        nn_->clear();
+
+        for (auto &startMotion : startMotions_)
+        {
+            // Add to the NN
+            // nn_->add(startMotion);
+            
+            motionQueue.push(startMotion);
+            // Add their children to the queue:
+            // addChildrenToList(&motionQueue, startMotion);
+            
+        }
+        OMPL_INFORM("motionQueue size: %d", int(motionQueue.size()));
+        while (motionQueue.empty() == false)
+        {
+            if(motionQueue.front() != new_root_motion)
+            {
+                // Add it's children to the queue
+                addChildrenToList(&motionQueue, motionQueue.front());
+                leavesToPrune.push(motionQueue.front());
+            }
+            // Pop the iterator, std::list::erase returns the next iterator
+            motionQueue.pop();
+        }
+        OMPL_INFORM("%d nodes to prune", int(leavesToPrune.size()));
+        while (leavesToPrune.empty() == false)
+        {
+            // Erase the actual motion
+            // First free the state
+            si_->freeState(leavesToPrune.front()->state);
+            // then delete the pointer
+            delete leavesToPrune.front();
+            // And finally remove it from the list, erase returns the next iterator
+            leavesToPrune.pop();
+            // Update our counter
+            ++numPruned;
+        }
+
+        startMotions_.clear();
+        new_root_motion->parent = nullptr;
+        startMotions_.push_back(new_root_motion);
+        saveToPrune.push(new_root_motion);
+        ob::Goal *goal = pdef_->getGoal().get();
+        goalMotions_.clear();
+        while (saveToPrune.empty() == false)
+        {
+            nn_->add(saveToPrune.front());
+            double distanceFromGoal;
+            if (goal->isSatisfied(saveToPrune.front()->state, &distanceFromGoal))
+            {
+                saveToPrune.front()->inGoal = true;
+                goalMotions_.push_back(saveToPrune.front());
+            }
+            if(saveToPrune.front())
+            addChildrenToList(&saveToPrune, saveToPrune.front());
+            saveToPrune.pop();
+        }
+        OMPL_INFORM("%d nodes saved", int(nn_->size()));
+
+        //re add odsolution to pdef_
+        std::vector<Motion *> mpath;
+        Motion *iterMotion = oldSolution;
+        while (iterMotion != nullptr)
+        {
+            mpath.push_back(iterMotion);
+            iterMotion = iterMotion->parent;
+        }
+        // set the solution path
+        auto path(std::make_shared<ompl::geometric::PathGeometric>(si_));
+        for (int i = mpath.size() - 1; i >= 0; --i)
+            path->append(mpath[i]->state);
+        // Add the solution path.
+        ob::PlannerSolution psol(path);
+        psol.setPlannerName(getName());
+        // If we don't have a goal motion, the solution is approximate
+        if (!bestGoalMotion_)
+        {
+            psol.setApproximate(approxDist_);
+            std::cout<<"psol not best"<<std::endl;
+        }
+        std::cout<<"appro: "<<approxDist_<<std::endl;
+        // Does the solution satisfy the optimization objective?
+        psol.setOptimized(opt_, oldSolution->cost, opt_->isSatisfied(bestCost_));
+        pdef_->addSolutionPath(psol);
+
+        return numPruned;
+
+    }
+
+}
+
 ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationCondition &ptc)
 {
     checkValidity();
@@ -146,28 +352,43 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
     bool symCost = opt_->isSymmetric();
 
     // Check if there are more starts
-    if (pis_.haveMoreStartStates() == true)
+    if (pdef_->getStartStateCount() > 0)
     {
-        // There are, add them
-        while (const ob::State *st = pis_.nextStart())
-        {
-            auto *motion = new Motion(si_);
-            si_->copyState(motion->state, st);
+        // // There are, add them
+        // while (const ob::State *st = pis_.nextStart())
+        // {
+        //     auto *motion = new Motion(si_);
+        //     si_->copyState(motion->state, st);
 
-            // newly added
-            motion->c_total = 0.0;
-            goal->isSatisfied(motion->state, &motion->low_bound);
-            // siC_->nullControl(motion->control);
+        //     // newly added
+        //     motion->c_total = 0.0;
+        //     goal->isSatisfied(motion->state, &motion->low_bound);
+        //     // siC_->nullControl(motion->control);
 
-            motion->cost = opt_->identityCost();
-            nn_->add(motion);
-            startMotions_.push_back(motion);
-        }
+        //     motion->cost = opt_->identityCost();
+        //     nn_->add(motion);
+        //     startMotions_.push_back(motion);
+        // }
 
         // And assure that, if we're using an informed sampler, it's reset
+        OMPL_INFORM("get start state");
         infSampler_.reset();
     }
+    else
+    {
+        OMPL_INFORM("do not get start state");
+    }
+    
     // No else
+
+    // every planning loop time, we get new startMotions_ from updated pdf_
+    // and we start prune nn_ to get a new tree rooted from startmotion
+    const ob::State *st = pdef_->getStartState(0);
+    // std::stringstream ss;
+    si_->printState(st);
+    int pre_plan_prune_nodes = onlinePruneTree(st);
+    plan_loop_++;
+    OMPL_INFORM("planning loop: %d, %d nodes pruned before planning.", plan_loop_, pre_plan_prune_nodes);
 
     if (nn_->size() == 0)
     {
@@ -192,8 +413,9 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
 
     const ob::ReportIntermediateSolutionFn intermediateSolutionCallback = pdef_->getIntermediateSolutionCallback();
 
-    Motion *approxGoalMotion = nullptr;
-    double approxDist = std::numeric_limits<double>::infinity();
+    // todo: online
+    // Motion *approxGoalMotion_ = nullptr;
+    // double approxDist_ = std::numeric_limits<double>::infinity();
 
     auto *rmotion = new Motion(si_);
     ob::State *rstate = rmotion->state;
@@ -221,11 +443,12 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
         OMPL_INFORM(
             "%s: Initial rewiring radius of %.2f", getName().c_str(),
             std::min(maxDistance_, r_rrt_ * std::pow(log((double)(nn_->size() + 1u)) / ((double)(nn_->size() + 1u)),
-                                                    1 / (double)(si_->getStateDimension()))));
+                                                    1 / (double)(sample_dimension_))));
 
     // our functor for sorting nearest neighbors
     CostIndexCompare compareFn(costs, *opt_);
 
+    bool solution_updated = false;
     while (ptc == false)
     {
         iterations_++;
@@ -262,14 +485,21 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
         }
 
         // Check if the motion between the nearest state and the state to add is valid
-        if (si_->checkMotion(nmotion->state, dstate))
+        std::pair<ob::State *, double> lastValid;
+        lastValid.first = si_->allocState();
+        if (si_->checkMotion(nmotion->state, dstate, lastValid))
         {
             // create a motion
             auto *motion = new Motion(si_);
             si_->copyState(motion->state, dstate);
+
+            // si_->copyState(motion->state, lastValid.first);
+            si_->freeState(lastValid.first);
+
             motion->parent = nmotion;
             motion->incCost = opt_->motionCost(nmotion->state, motion->state);
             motion->cost = opt_->combineCosts(nmotion->cost, motion->incCost);
+            motion->intime = lastValid.second;
 
             // Find nearby neighbors of the new motion
             getNeighbors(motion, nbh);
@@ -459,6 +689,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                     bestGoalMotion_ = goalMotions_.front();
                     bestCost_ = bestGoalMotion_->cost;
                     updatedSolution = true;
+                    solution_updated = true;
 
                     OMPL_INFORM("%s: Found an initial solution with a cost of %.2f in %u iterations (%u "
                                 "vertices in the graph)",
@@ -476,6 +707,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                             bestGoalMotion_ = goalMotion;
                             bestCost_ = bestGoalMotion_->cost;
                             updatedSolution = true;
+                            solution_updated = true;
 
                             // Check if it satisfies the optimization objective, if it does, break the for loop
                             if (opt_->isSatisfied(bestCost_))
@@ -512,10 +744,11 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             }
 
             // Checking for approximate solution (closest state found to the goal)
-            if (goalMotions_.size() == 0 && distanceFromGoal < approxDist)
+            if (goalMotions_.size() == 0 && distanceFromGoal < approxDist_)
             {
-                approxGoalMotion = motion;
-                approxDist = distanceFromGoal;
+                approxGoalMotion_ = motion;
+                approxDist_ = distanceFromGoal;
+                solution_updated = true;
             }
         }
 
@@ -526,15 +759,18 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
 
     // Add our solution (if it exists)
     Motion *newSolution = nullptr;
-    if (bestGoalMotion_)
+    if(solution_updated)
     {
-        // We have an exact solution
-        newSolution = bestGoalMotion_;
-    }
-    else if (approxGoalMotion)
-    {
-        // We don't have a solution, but we do have an approximate solution
-        newSolution = approxGoalMotion;
+        if (bestGoalMotion_)
+        {
+            // We have an exact solution
+            newSolution = bestGoalMotion_;
+        }
+        else if (approxGoalMotion_)
+        {
+            // We don't have a solution, but we do have an approximate solution
+            newSolution = approxGoalMotion_;
+        }   
     }
     // No else, we have nothing
 
@@ -562,7 +798,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
 
         // If we don't have a goal motion, the solution is approximate
         if (!bestGoalMotion_)
-            psol.setApproximate(approxDist);
+            psol.setApproximate(approxDist_);
 
         // Does the solution satisfy the optimization objective?
         psol.setOptimized(opt_, newSolution->cost, opt_->isSatisfied(bestCost_));
@@ -581,6 +817,184 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
 
     // We've added a solution if newSolution == true, and it is an approximate solution if bestGoalMotion_ == false
     return ob::PlannerStatus(newSolution != nullptr, bestGoalMotion_ == nullptr);
+}
+
+bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::geometric::PathGeometric> &best_path)
+{
+    bool result = false;
+    if(!pdef_->hasSolution())
+    {
+        OMPL_INFORM("no solution to repropagate");
+        return result;
+    }
+
+    // GoalMotionCompare goalmotionFn(*opt_);
+    std::priority_queue<Motion*,std::vector<Motion*>, GoalMotionCompare> goal_motion_que;
+    if(!bestGoalMotion_)
+    {
+        goal_motion_que.push(approxGoalMotion_);
+    }
+    else
+    {
+        for (auto &goalMotion : goalMotions_)
+            goal_motion_que.push(goalMotion);
+    }
+    
+
+    // OMPL_INFORM("%d solutions ready to repropagate", pdef_->getSolutionCount());
+    OMPL_INFORM("%d solutions ready to repropagate", goal_motion_que.size());
+    // std::vector< ob::PlannerSolution > solutions = pdef_->getSolutions();
+    pdef_->clearSolutionPaths();
+    // for(int i=0 ; i<solutions.size(); i++)
+    int i = 0;
+    if(bestGoalMotion_)
+    {
+        assert(bestGoalMotion_ == goal_motion_que.top());
+    }
+    while(!goal_motion_que.empty())
+    {
+        i++;
+        Motion *current_motion = goal_motion_que.top();
+        if(bestGoalMotion_)
+        {
+            bestGoalMotion_ = goal_motion_que.top();
+            bestCost_ = bestGoalMotion_->cost;
+        }
+        
+        Motion *iter_motion = current_motion;
+        double approach_dis{std::numeric_limits<double>::infinity()};
+        ob::State *solution_nearst_state;
+        int index = 0;
+        while(iter_motion)
+        {
+            if(si_->distance(current_state, iter_motion->state) < approach_dis)
+            {
+                approach_dis = si_->distance(current_state, iter_motion->state);
+                solution_nearst_state = iter_motion->state;
+                index ++;
+            }
+            iter_motion = iter_motion->parent;
+        }
+
+        OMPL_INFORM("%d th solution nearest index %d", i, index);
+        bool path_validity = true;
+        if(si_->checkMotion(current_state, solution_nearst_state))
+        {
+            // set the solution path
+            best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
+            std::vector<Motion *> mpath;
+            Motion *iterMotion = current_motion;
+            while (iterMotion->state != solution_nearst_state)
+            {
+                mpath.push_back(iterMotion);
+                iterMotion = iterMotion->parent;
+                if(!si_->isValid(iterMotion->state))
+                {
+                    path_validity = false;
+                    OMPL_INFORM("%d th solution recheck failed", i);
+                    break;
+                }
+            }
+            
+            if(path_validity)
+            {
+                for (int i = mpath.size() - 1; i >= 0; --i)
+                best_path->append(mpath[i]->state);
+
+                // Add the solution path.
+                ob::PlannerSolution psol(best_path);
+                pdef_->addSolutionPath(psol);
+                result = true;
+                rePropagation_flag_ = true;
+                return result;
+            }        
+            
+        }
+        else
+        {
+            OMPL_INFORM("%d th solution repropagation failed.", i);
+        }
+        goal_motion_que.pop();
+
+    }
+    OMPL_INFORM("repropagation failed and send stop trajecotry");
+    best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
+    best_path->append(current_state);
+    // Add the solution path.
+    ob::PlannerSolution psol(best_path);
+    pdef_->addSolutionPath(psol);
+    rePropagation_flag_ = false;
+    // bestGoalMotion_ = nullptr;
+    // approxGoalMotion_ = nullptr;
+    // approxDist_= std::numeric_limits<double>::infinity();
+
+    return result;
+
+
+    // for(int i=0 ; i<solutions.size(); i++)
+    // {
+    //     ob::PlannerSolution current_solution = solutions[i];
+    //     ob::PathPtr current_path = current_solution.path_;
+    //     ompl::geometric::PathGeometric *current_geo_path = current_path->as<og::PathGeometric>();
+    //     if(!result)
+    //     {
+    //         std::vector< ob::State * > path_states = current_geo_path->getStates();
+    //         OMPL_INFORM("%d solution path states num %d", i, path_states.size());
+    //         // std::shared_ptr<ompl::NearestNeighbors<Motion *>> nnh_;
+    //         double approach_dis{std::numeric_limits<double>::infinity()};
+    //         ob::State *solution_nearst_state;
+    //         int index = 0;
+    //         for(int k=0; k<path_states.size(); k++)
+    //         {
+    //             if(si_->distance(current_state, path_states[k]) < approach_dis)
+    //             {
+    //                 approach_dis = si_->distance(current_state, path_states[k]);
+    //                 solution_nearst_state = path_states[k];
+    //                 index = k;
+    //             }
+    //         }
+    //         OMPL_INFORM("%d th solution nearest index %d", i, index);
+    //         bool path_validity = true;
+    //         if(si_->checkMotion(current_state, solution_nearst_state))
+    //         {
+    //             // set the solution path
+    //             best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
+                
+    //             for (int j = index; j < path_states.size(); j++)
+    //             {
+    //                 if(!si_->isValid(path_states[j]))
+    //                 {
+    //                     path_validity = false;
+    //                     OMPL_INFORM("%d th solution recheck failed", i);
+    //                     break;
+    //                 }
+    //                 best_path->append(path_states[j]);
+    //             }
+
+    //             if(path_validity)
+    //             {
+    //                 // Add the solution path.
+    //                 ob::PlannerSolution psol(best_path);
+    //                 pdef_->addSolutionPath(psol);
+    //                 result = true;
+    //             }        
+                
+    //         }
+    //         else
+    //         {
+    //             OMPL_INFORM("%d th solution repropagation failed", i);
+    //         }
+            
+    //     }
+        // OMPL_INFORM("debug1");
+        // OMPL_INFORM("after %d solution path states num %d", i, current_geo_path->getStates().size());
+        // si_->printState(current_geo_path->getStates()[2]);
+        // current_geo_path->freeMemory();
+        // OMPL_INFORM("debug1");
+    // }
+    // return result;
+
+
 }
 
 void CL_RRTstar::getNeighbors(Motion *motion, std::vector<Motion *> &nbh) const
@@ -1130,7 +1544,8 @@ bool CL_RRTstar::sampleUniform(ob::State *statePtr)
 
 void CL_RRTstar::calculateRewiringLowerBounds()
 {
-    const auto dimDbl = static_cast<double>(si_->getStateDimension());
+    // const auto dimDbl = static_cast<double>(si_->getStateDimension());
+    double dimDbl = static_cast<double>(sample_dimension_);
 
     // k_rrt > 2^(d + 1) * e * (1 + 1 / d).  K-nearest RRT*
     k_rrt_ = rewireFactor_ * (std::pow(2, dimDbl + 1) * boost::math::constants::e<double>() * (1.0 + 1.0 / dimDbl));
@@ -1139,7 +1554,7 @@ void CL_RRTstar::calculateRewiringLowerBounds()
     // If we're not using the informed measure, prunedMeasure_ will be set to si_->getSpaceMeasure();
     r_rrt_ =
         rewireFactor_ *
-        std::pow(2 * (1.0 + 1.0 / dimDbl) * (prunedMeasure_ / ompl::unitNBallMeasure(si_->getStateDimension())), 1.0 / dimDbl);
+        std::pow(2 * (1.0 + 1.0 / dimDbl) * (prunedMeasure_ / ompl::unitNBallMeasure(sample_dimension_)), 1.0 / dimDbl);
 }
 
 }

@@ -40,6 +40,9 @@ namespace rotors_planner_rrtstar
         // oc::Control *control{nullptr};
         unsigned int steps{0};
         bool commit_protect{false};
+        bool safe{false};
+        double intime{0};
+        double time{0};
         double c_total{std::numeric_limits<double>::infinity()};
         double low_bound{std::numeric_limits<double>::infinity()};
         double up_bound{std::numeric_limits<double>::infinity()};
@@ -68,6 +71,8 @@ namespace rotors_planner_rrtstar
 
         ob::PlannerStatus solve(const ob::PlannerTerminationCondition &ptc) override;
 
+        void setCurrentState(const ob::State* current_state);
+
         void clear() override;
 
         void setup() override;
@@ -85,6 +90,16 @@ namespace rotors_planner_rrtstar
         double getGoalBias() const
         {
             return goalBias_;
+        }
+
+        void setReplanPathDeviation(double prd)
+        {
+            path_replan_deviation_ = prd;
+        }
+
+        double getReplanPathDeviation() const
+        {
+            return path_replan_deviation_;
         }
 
         void setRange(double distance)
@@ -203,6 +218,16 @@ namespace rotors_planner_rrtstar
             return batchSize_;
         }
 
+        void setSampleDimension(unsigned int sampledimension)
+        {
+            sample_dimension_ = sampledimension;
+        }
+
+        unsigned int getSampleDimension() const
+        {
+            return sample_dimension_;
+        }
+
         void setFocusSearch(const bool focus)
         {
             setInformedSampling(focus);
@@ -246,6 +271,15 @@ namespace rotors_planner_rrtstar
             return bestCost_;
         }
 
+        bool rePropagation(ob::State * current_state, std::shared_ptr<ompl::geometric::PathGeometric> &best_path);
+        
+        Motion * get_root_node()
+        {
+            if(startMotions_.empty())
+                return nullptr;
+            return startMotions_[0];
+        }
+
     protected:
         
         void allocSampler();
@@ -274,6 +308,15 @@ namespace rotors_planner_rrtstar
             return si_->distance(a->state, b->state);
         }
 
+        // For sorting a list of goal motions
+        struct GoalMotionCompare
+        {
+            bool operator()(Motion* i, Motion* j)
+            {
+                return !(i->cost.value() < j->cost.value());
+            }
+        };
+
         void getNeighbors(Motion *motion, std::vector<Motion *> &nbh) const;
 
         void removeFromParent(Motion *m);
@@ -281,6 +324,8 @@ namespace rotors_planner_rrtstar
         void updateChildCosts(Motion *m);
 
         int pruneTree(const ob::Cost &pruneTreeCost);
+
+        int onlinePruneTree(const ob::State * current_state);
 
         ob::Cost solutionHeuristic(const Motion *motion) const;
 
@@ -301,6 +346,12 @@ namespace rotors_planner_rrtstar
 
         std::shared_ptr<ompl::NearestNeighbors<Motion *>> nn_;
 
+        unsigned int sample_dimension_{3};
+
+        unsigned int plan_loop_{0};
+
+        double path_replan_deviation_{0.5};
+
         double goalBias_{.05};
 
         double maxDistance_{1.};
@@ -320,6 +371,9 @@ namespace rotors_planner_rrtstar
         ob::OptimizationObjectivePtr opt_;
 
         Motion *bestGoalMotion_{nullptr};
+        Motion *approxGoalMotion_{nullptr};
+        double approxDist_{std::numeric_limits<double>::infinity()};
+        bool rePropagation_flag_{true};
 
         std::vector<Motion *> goalMotions_;
 
@@ -344,6 +398,8 @@ namespace rotors_planner_rrtstar
         unsigned int batchSize_{1u};
 
         std::vector<Motion *> startMotions_;
+
+        // std::vector<Motion *> solutionEndMotions_;
 
         ob::Cost bestCost_{std::numeric_limits<double>::quiet_NaN()};
 
