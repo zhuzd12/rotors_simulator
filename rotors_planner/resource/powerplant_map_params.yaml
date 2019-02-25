@@ -26,3 +26,4 @@ planner:
   sample_connect_range: 2.0
   setKNearest: True
   path_replan_deviation: 0.5
+  useTrejectoryExpansion: false

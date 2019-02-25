@@ -494,7 +494,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             si_->copyState(motion->state, dstate);
 
             // si_->copyState(motion->state, lastValid.first);
-            si_->freeState(lastValid.first);
+            // si_->freeState(lastValid.first);
 
             motion->parent = nmotion;
             motion->incCost = opt_->motionCost(nmotion->state, motion->state);
@@ -568,6 +568,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                     else
                         valid[*i] = -1;
                 }
+
             }
             else  // if not delayCC
             {
@@ -602,32 +603,86 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                     }
                 }
             }
-
-            if (useNewStateRejection_)
+            
+            Motion *connected_motion = motion->parent;
+            if (!useNewStateRejection_ || (useNewStateRejection_ && opt_->isCostBetterThan(solutionHeuristic(motion), bestCost_)))
             {
-                if (opt_->isCostBetterThan(solutionHeuristic(motion), bestCost_))
+                // as we have found motion->parent namely nbh[i] as the connected node
+                // we use checkMotion function to add all intermediate nodes to the nn_ and update motion->parent
+                if(useTrejectoryExpansion_)
                 {
+                    OMPL_INFORM("useTrejectoryExpansion !");
+                    tempTrajectoryMotions_.clear();
+                    // Motion *connected_motion = motion->parent;
+                    std::vector<ob::State *> trajectory_states;
+                    std::vector<double> time_stamps;
+                    ob::MotionValidatorPtr mv = si_->getMotionValidator();
+                    const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
+                    bool recheck = model_mv->checkMotion(connected_motion->state, motion->state, trajectory_states, time_stamps);
+                    if(!recheck)
+                    {
+                        OMPL_INFORM("debug1 !");
+                        si_->freeState(motion->state);
+                        delete motion;
+                        si_->freeStates(trajectory_states);
+                        continue;
+                    }
+                    if(trajectory_states.empty())
+                    {
+                        OMPL_INFORM("debug2 !");
+                        nn_->add(motion);
+                        motion->parent->children.push_back(motion);
+                    }
+                    else
+                    {
+                        OMPL_INFORM("debug3 !");
+                        // std::vector<Motion *> intermotions;
+                        Motion* last_motion = connected_motion;
+                        for (std::size_t i = 0; i < trajectory_states.size(); ++i)
+                        {
+                            Motion *inter_motion = new Motion(si_);
+                            si_->copyState(inter_motion->state, trajectory_states[i]);
+                            inter_motion->incCost = opt_->motionCost(last_motion->state, inter_motion->state);
+                            inter_motion->cost = opt_->combineCosts(last_motion->cost, inter_motion->incCost);
+                            inter_motion->intime = time_stamps[i];
+                            inter_motion->parent = last_motion;
+                            inter_motion->parent->children.push_back(inter_motion);
+                            tempTrajectoryMotions_.push_back(inter_motion);
+                            nn_->add(inter_motion);
+                            last_motion = inter_motion;                     
+                        }
+                        // "motion" do not add to tree
+                        si_->freeState(motion->state);
+                        motion = last_motion;
+                    }               
+                }
+                else
+                {
+                    si_->copyState(motion->state, lastValid.first);
+                    si_->freeState(lastValid.first);
                     nn_->add(motion);
                     motion->parent->children.push_back(motion);
-                }
-                else  // If the new motion does not improve the best cost it is ignored.
-                {
-                    si_->freeState(motion->state);
-                    delete motion;
-                    continue;
                 }
             }
             else
             {
                 // add motion to the tree
-                nn_->add(motion);
-                motion->parent->children.push_back(motion);
+                si_->freeState(motion->state);
+                delete motion;
+                continue;
             }
 
             bool checkForSolution = false;
+
+            // if(useTrejectoryExpansion_ && useTrajectoryRewire)
+            // {
+
+            // }
+            std::pair<ob::State *, double> lastValid_rewire;
+            // lastValid_rewire.first = si_->allocState();
             for (std::size_t i = 0; i < nbh.size(); ++i)
-            {
-                if (nbh[i] != motion->parent)
+            {   
+                if (nbh[i] != connected_motion)
                 {
                     ob::Cost nbhIncCost;
                     if (symCost)
@@ -642,7 +697,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                         {
                             motionValid =
                                 (!useKNearest_ || si_->distance(nbh[i]->state, motion->state) < maxDistance_) &&
-                                si_->checkMotion(motion->state, nbh[i]->state);
+                                si_->checkMotion(motion->state, nbh[i]->state, lastValid_rewire);
                         }
                         else
                         {
@@ -655,10 +710,65 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                             removeFromParent(nbh[i]);
 
                             // Add this node to the new parent
-                            nbh[i]->parent = motion;
-                            nbh[i]->incCost = nbhIncCost;
-                            nbh[i]->cost = nbhNewCost;
-                            nbh[i]->parent->children.push_back(nbh[i]);
+                            // todo: add all intermediate trajectory nodes form motion->state to nbh[i]->state to nn_
+                            // and update nbh[i]->parent = last node of intermediate trajectory
+                            if(useTrejectoryExpansion_)
+                            {
+                                OMPL_INFORM("debug4 !");
+                                Motion *connected_motion = motion->parent;
+                                std::vector<ob::State *> trajectory_states;
+                                std::vector<double> time_stamps;
+                                ob::MotionValidatorPtr mv = si_->getMotionValidator();
+                                const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
+                                bool recheck = model_mv->checkMotion(motion->state, nbh[i]->state, trajectory_states, time_stamps);
+                                if(!recheck)
+                                {
+                                    OMPL_INFORM("debug5 !");
+                                    si_->freeStates(trajectory_states);
+                                    continue;
+                                }
+                                if(trajectory_states.empty())
+                                {
+                                    OMPL_INFORM("debug6 !");
+                                    nbh[i]->parent = motion;
+                                    nbh[i]->incCost = nbhIncCost;
+                                    nbh[i]->cost = nbhNewCost;
+                                    nbh[i]->parent->children.push_back(nbh[i]);
+                                    nbh[i]->intime = lastValid_rewire.second;
+                                }
+                                else
+                                {
+                                    OMPL_INFORM("debug7 !");
+                                    std::vector<Motion *> intermotions;
+                                    Motion* last_motion = motion;
+                                    for (std::size_t i = 0; i < trajectory_states.size(); ++i)
+                                    {
+                                        Motion *inter_motion = new Motion(si_);
+                                        si_->copyState(inter_motion->state, trajectory_states[i]);
+                                        inter_motion->incCost = opt_->motionCost(last_motion->state, inter_motion->state);
+                                        inter_motion->cost = opt_->combineCosts(last_motion->cost, inter_motion->incCost);
+                                        inter_motion->intime = time_stamps[i];
+                                        inter_motion->parent = last_motion;
+                                        inter_motion->parent->children.push_back(inter_motion);
+                                        intermotions.push_back(inter_motion);
+                                        nn_->add(inter_motion);
+                                        last_motion = inter_motion;                     
+                                    }
+                                    // "motion" do not add to tree
+                                    nbh[i]->parent = last_motion;
+                                    nbh[i]->incCost = opt_->identityCost();
+                                    nbh[i]->cost = last_motion->cost;
+                                    nbh[i]->intime = 0.0;
+                                    nbh[i]->parent->children.push_back(nbh[i]);
+                                }               
+                            }
+                            else{
+                                nbh[i]->parent = motion;
+                                nbh[i]->incCost = nbhIncCost;
+                                nbh[i]->cost = nbhNewCost;
+                                nbh[i]->intime = lastValid_rewire.second;
+                                nbh[i]->parent->children.push_back(nbh[i]);
+                            }
 
                             // Update the costs of the node's children
                             updateChildCosts(nbh[i]);
@@ -1009,7 +1119,7 @@ void CL_RRTstar::getNeighbors(Motion *motion, std::vector<Motion *> &nbh) const
     else
     {
         double r = std::min(
-            maxDistance_, r_rrt_ * std::pow(log(cardDbl) / cardDbl, 1 / static_cast<double>(si_->getStateDimension())));
+            maxDistance_, r_rrt_ * std::pow(log(cardDbl) / cardDbl, 1 / static_cast<double>(sample_dimension_)));
         nn_->nearestR(motion, r, nbh);
     }
 }

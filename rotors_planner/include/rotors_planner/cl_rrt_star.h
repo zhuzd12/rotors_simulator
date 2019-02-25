@@ -251,6 +251,16 @@ namespace rotors_planner_rrtstar
             return useKNearest_;
         }
 
+        void setTrejectoryExpansion(bool ute)
+        {
+            useTrejectoryExpansion_ = ute;
+        }
+
+        bool getTrejectoryExpansion() const
+        {
+            return useTrejectoryExpansion_;
+        }
+
         void setNumSamplingAttempts(unsigned int numAttempts)
         {
             numSampleAttempts_ = numAttempts;
@@ -360,6 +370,8 @@ namespace rotors_planner_rrtstar
 
         bool useKNearest_{true};
 
+        bool useTrejectoryExpansion_{true};
+
         double rewireFactor_{1.1};
 
         double k_rrt_{0u};
@@ -376,6 +388,8 @@ namespace rotors_planner_rrtstar
         bool rePropagation_flag_{true};
 
         std::vector<Motion *> goalMotions_;
+        std::vector<Motion *> tempTrajectoryMotions_;
+        bool useTrajectoryRewire{false};
 
         bool useTreePruning_{false};
 

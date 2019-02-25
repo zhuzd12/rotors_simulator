@@ -9,10 +9,11 @@ void ompl::base::ModelMotionValidator::defaultSettings()
         throw Exception("No state space for motion validator");
 }
 
-bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State *s2, std::vector<State *> &state_sequence) const
+bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State *s2, std::vector<State *> &state_sequence, std::vector<double>& time_stamps) const
 {
     /* assume motion starts in a valid configuration so s1 is valid */
     state_sequence.clear();
+    time_stamps.clear();
     if (!si_->isValid(s2))
     {
         invalid_++;
@@ -22,20 +23,22 @@ bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State 
     // bool result = true;
     int st_loop = 0;
     int st = 0;
-    double dis_to_target_ = si_->distance(s1, s2);
-    double accumulate_distance_ = 0.0;
+    double dis_to_target = si_->distance(s1, s2);
+    double accumulate_distance = 0.0;
+    int accumulate_steps = 0;
     State *current_State = si_->allocState();
     State *next_State = si_->allocState();
     si_->copyState(current_State, s1);
-    state_sequence.push_back(current_State);
+    // state_sequence.push_back(current_State);
 
-    while(dis_to_target_ > path_deviation_ && st_loop < max_propagate_loops_)
+    while(dis_to_target > path_deviation_ && st_loop < max_propagate_loops_)
     {
         Controlfn_(current_State, s2, duration_, next_State);
 
-        accumulate_distance_ = accumulate_distance_ + si_->distance(current_State, next_State);
-        dis_to_target_ = si_->distance(current_State, s2);
-        if(accumulate_distance_ >= path_resolution_ || dis_to_target_ < path_deviation_)
+        accumulate_distance = accumulate_distance + si_->distance(current_State, next_State);
+        accumulate_steps++;
+        dis_to_target = si_->distance(current_State, s2);
+        if(accumulate_distance >= path_resolution_ || dis_to_target < path_deviation_)
         {
             if(!si_->isValid(next_State))
             {
@@ -43,11 +46,12 @@ bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State 
                 si_->freeState(current_State);
                 return false;
             }
-            accumulate_distance_ = 0.0;
+            accumulate_distance = 0.0;
             // State *new_State = si_->allocState();
             // si_->copyState(new_State, next_State);
             state_sequence.push_back(si_->allocState());
             si_->copyState(state_sequence[st], next_State);
+            time_stamps.push_back(double(accumulate_steps)*duration_);
             st++;
         }
 

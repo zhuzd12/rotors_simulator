@@ -474,6 +474,7 @@ int main(int argc, char **argv)
   double path_deviation, initial_plan_time, path_resolution, sample_max_range, loop_plan_time, propagate_time;
   bool use_propagation, useKNearest;
   double path_replan_deviation;
+  bool useTrejectoryExpansion;
   pnh.getParam("planner/path_deviation", path_deviation);
   pnh.getParam("planner/path_resolution", path_resolution);
   pnh.getParam("planner/sample_connect_range", sample_max_range);
@@ -482,6 +483,7 @@ int main(int argc, char **argv)
   pnh.getParam("planner/use_propagation", use_propagation);
   pnh.getParam("planner/setKNearest", useKNearest);
   pnh.getParam("planner/path_replan_deviation", path_replan_deviation);
+  pnh.getParam("planner/useTrejectoryExpansion", useTrejectoryExpansion);
   
   StatePropagatorFn model = std::bind(&Hexacopterpropagate, step_size, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
@@ -538,6 +540,7 @@ int main(int argc, char **argv)
   planner->setSampleCleanerFn(svc);
   planner->setRange(sample_max_range);
   planner->setKNearest(useKNearest);
+  planner->setTrejectoryExpansion(useTrejectoryExpansion);
   planner->setReplanPathDeviation(path_replan_deviation);
   planner->setSampleDimension(3);
   // planner->setMinRange(0.20);

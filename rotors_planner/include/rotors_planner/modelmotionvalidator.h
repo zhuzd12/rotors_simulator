@@ -42,7 +42,7 @@ namespace ompl
 
             bool checkMotion(const State *s1, const State *s2, std::pair<State *, double> &lastValid) const override;
 
-            bool checkMotion(const State *s1, const State *s2, std::vector<State *> &state_sequence) const;
+            bool checkMotion(const State *s1, const State *s2, std::vector<State *> &state_sequence, std::vector<double>& time_stamps) const;
 
         private:
             StateSpace *stateSpace_;
