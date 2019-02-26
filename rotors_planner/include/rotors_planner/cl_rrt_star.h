@@ -112,6 +112,11 @@ namespace rotors_planner_rrtstar
             return maxDistance_;
         }
 
+        void setMV(std::shared_ptr<ob::ModelMotionValidator> model_mv)
+        {
+            model_mv_ = model_mv;
+        }
+
         void setRewireFactor(double rewireFactor)
         {
             rewireFactor_ = rewireFactor;
@@ -390,6 +395,7 @@ namespace rotors_planner_rrtstar
         std::vector<Motion *> goalMotions_;
         std::vector<Motion *> tempTrajectoryMotions_;
         bool useTrajectoryRewire{false};
+        std::shared_ptr<ob::ModelMotionValidator> model_mv_;
 
         bool useTreePruning_{false};
 

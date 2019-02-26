@@ -543,6 +543,8 @@ int main(int argc, char **argv)
   planner->setTrejectoryExpansion(useTrejectoryExpansion);
   planner->setReplanPathDeviation(path_replan_deviation);
   planner->setSampleDimension(3);
+  std::shared_ptr<ob::ModelMotionValidator> m_v(new ob::ModelMotionValidator(si, path_resolution, max_loop, waypoint_interval, std::bind(&propagationFn, model, controller, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)));
+  planner->setMV(m_v);
   // planner->setMinRange(0.20);
   // planner->setController(std::bind(&Lee_controller, lee_position_controller_, std::placeholders::_1, std::placeholders::_2,std::placeholders::_3));
   planner->setProblemDefinition(pdef);
@@ -608,6 +610,8 @@ int main(int argc, char **argv)
 //   ros::spinOnce();
 
   /* rviz interface */
+  bool show_tree;
+  pnh.getParam("rviz/show_tree", show_tree);
   ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 1);
   visualization_msgs::Marker line_strip, points, line_actual, line_protect, line_tree;
   line_protect.header.frame_id = line_tree.header.frame_id = points.header.frame_id = line_strip.header.frame_id = line_actual.header.frame_id = "/world";
@@ -791,17 +795,20 @@ int main(int argc, char **argv)
         p.y = point_position[1];
         p.z = point_position[2];
 
-        for(auto &new_addmotion :current_addmotion->children)
+        if(show_tree)
         {
-            ob::CompoundStateSpace::StateType& ps_c = *new_addmotion->state->as<ob::CompoundStateSpace::StateType>();
-            double *point_position_c = ps_c.as<ob::RealVectorStateSpace::StateType>(1)->values;
-            geometry_msgs::Point p_c;
-            p_c.x = point_position_c[0];
-            p_c.y = point_position_c[1];
-            p_c.z = point_position_c[2];
-            line_tree.points.push_back(p);
-            line_tree.points.push_back(p_c);
-            box.push(new_addmotion);
+            for(auto &new_addmotion :current_addmotion->children)
+            {
+                ob::CompoundStateSpace::StateType& ps_c = *new_addmotion->state->as<ob::CompoundStateSpace::StateType>();
+                double *point_position_c = ps_c.as<ob::RealVectorStateSpace::StateType>(1)->values;
+                geometry_msgs::Point p_c;
+                p_c.x = point_position_c[0];
+                p_c.y = point_position_c[1];
+                p_c.z = point_position_c[2];
+                line_tree.points.push_back(p);
+                line_tree.points.push_back(p_c);
+                box.push(new_addmotion);
+                }
             }
         }
     }
@@ -830,7 +837,8 @@ int main(int argc, char **argv)
     // publish msg
     marker_pub.publish(points);
     marker_pub.publish(line_strip);
-    marker_pub.publish(line_tree);
+    if(show_tree)
+        marker_pub.publish(line_tree);
     marker_pub.publish(line_actual);
     octomap_pub.publish(octo_msg);
     ros::spinOnce();

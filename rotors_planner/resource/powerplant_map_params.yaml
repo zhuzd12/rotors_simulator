@@ -27,3 +27,6 @@ planner:
   setKNearest: True
   path_replan_deviation: 0.5
   useTrejectoryExpansion: false
+
+rviz:
+  show_tree: false

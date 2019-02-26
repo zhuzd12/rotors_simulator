@@ -611,17 +611,21 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                 // we use checkMotion function to add all intermediate nodes to the nn_ and update motion->parent
                 if(useTrejectoryExpansion_)
                 {
-                    OMPL_INFORM("useTrejectoryExpansion !");
+                    // OMPL_INFORM("useTrejectoryExpansion !");
                     tempTrajectoryMotions_.clear();
                     // Motion *connected_motion = motion->parent;
                     std::vector<ob::State *> trajectory_states;
                     std::vector<double> time_stamps;
-                    ob::MotionValidatorPtr mv = si_->getMotionValidator();
-                    const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
-                    bool recheck = model_mv->checkMotion(connected_motion->state, motion->state, trajectory_states, time_stamps);
+                    // ob::MotionValidatorPtr mv = si_->getMotionValidator();
+                    // OMPL_INFORM("debug00 !");
+                    // const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
+                    // if(model_mv == nullptr)
+                    //     OMPL_INFORM("debug003 !");
+                    // OMPL_INFORM("debug001 !");
+                    bool recheck = model_mv_->checkMotion(connected_motion->state, motion->state, trajectory_states, time_stamps);
                     if(!recheck)
                     {
-                        OMPL_INFORM("debug1 !");
+                        // OMPL_INFORM("debug1 !");
                         si_->freeState(motion->state);
                         delete motion;
                         si_->freeStates(trajectory_states);
@@ -629,13 +633,13 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                     }
                     if(trajectory_states.empty())
                     {
-                        OMPL_INFORM("debug2 !");
+                        // OMPL_INFORM("debug2 !");
                         nn_->add(motion);
                         motion->parent->children.push_back(motion);
                     }
                     else
                     {
-                        OMPL_INFORM("debug3 !");
+                        // OMPL_INFORM("debug3 !");
                         // std::vector<Motion *> intermotions;
                         Motion* last_motion = connected_motion;
                         for (std::size_t i = 0; i < trajectory_states.size(); ++i)
@@ -714,22 +718,22 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                             // and update nbh[i]->parent = last node of intermediate trajectory
                             if(useTrejectoryExpansion_)
                             {
-                                OMPL_INFORM("debug4 !");
+                                // OMPL_INFORM("debug4 !");
                                 Motion *connected_motion = motion->parent;
                                 std::vector<ob::State *> trajectory_states;
                                 std::vector<double> time_stamps;
-                                ob::MotionValidatorPtr mv = si_->getMotionValidator();
-                                const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
-                                bool recheck = model_mv->checkMotion(motion->state, nbh[i]->state, trajectory_states, time_stamps);
+                                // ob::MotionValidatorPtr mv = si_->getMotionValidator();
+                                // const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
+                                bool recheck = model_mv_->checkMotion(motion->state, nbh[i]->state, trajectory_states, time_stamps);
                                 if(!recheck)
                                 {
-                                    OMPL_INFORM("debug5 !");
+                                    // OMPL_INFORM("debug5 !");
                                     si_->freeStates(trajectory_states);
                                     continue;
                                 }
                                 if(trajectory_states.empty())
                                 {
-                                    OMPL_INFORM("debug6 !");
+                                    // OMPL_INFORM("debug6 !");
                                     nbh[i]->parent = motion;
                                     nbh[i]->incCost = nbhIncCost;
                                     nbh[i]->cost = nbhNewCost;
@@ -738,7 +742,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                                 }
                                 else
                                 {
-                                    OMPL_INFORM("debug7 !");
+                                    // OMPL_INFORM("debug7 !");
                                     std::vector<Motion *> intermotions;
                                     Motion* last_motion = motion;
                                     for (std::size_t i = 0; i < trajectory_states.size(); ++i)
