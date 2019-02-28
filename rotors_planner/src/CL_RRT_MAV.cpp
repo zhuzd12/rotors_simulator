@@ -594,9 +594,9 @@ int main(int argc, char **argv)
   line_protect.color.a = 1.0;
 
   line_tree.scale.x = 0.05;
-  line_tree.color.r = 184.0f/255.0f;
-  line_tree.color.g = 134.0f/255.0f;
-  line_tree.color.b = 11.0f/255.0f;
+  line_tree.color.r = 90.0f/255.0f;
+  line_tree.color.g = 90.0f/255.0f;
+  line_tree.color.b = 90.0f/255.0f;
   line_tree.color.a = 1.0;
 
   geometry_msgs::Point goal_point;

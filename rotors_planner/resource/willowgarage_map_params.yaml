@@ -9,23 +9,23 @@ workspace:
   max_x: 10.0
   min_y: -15.0
   max_y: 45.0
-  min_z: 0.0
+  min_z: 0.5
   max_z: 2.5
 
 propagation:
-  use_propagation: False
+  use_propagation: true
   step_size: 0.02
   waypoint_interval: 0.10
-  max_loop: 30
+  max_loop: 100
 
 planner:
-  initial_plan_time: 5.0
+  initial_plan_time: 1.0
   loop_plan_time: 2.0
   path_deviation: 0.2
   path_resolution: 0.25
-  sample_connect_range: 2.0
-  setKNearest: True
-  path_replan_deviation: 0.5
+  sample_connect_range: 5.0
+  setKNearest: true
+  path_replan_deviation: 1.0
   useTrejectoryExpansion: true
 
 rviz:

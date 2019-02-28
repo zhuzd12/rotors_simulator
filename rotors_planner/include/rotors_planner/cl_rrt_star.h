@@ -286,7 +286,7 @@ namespace rotors_planner_rrtstar
             return bestCost_;
         }
 
-        bool rePropagation(ob::State * current_state, std::shared_ptr<ompl::geometric::PathGeometric> &best_path);
+        bool rePropagation(ob::State * current_state, std::shared_ptr<ompl::geometric::PathGeometric> &best_path, std::vector<double> &time_stamps);
         
         Motion * get_root_node()
         {
@@ -365,6 +365,8 @@ namespace rotors_planner_rrtstar
 
         unsigned int plan_loop_{0};
 
+        double loop_plan_time_{1.0};
+
         double path_replan_deviation_{0.5};
 
         double goalBias_{.05};
@@ -394,6 +396,7 @@ namespace rotors_planner_rrtstar
 
         std::vector<Motion *> goalMotions_;
         std::vector<Motion *> tempTrajectoryMotions_;
+        std::vector<Motion *> protectRegionMotions_;
         bool useTrajectoryRewire{false};
         std::shared_ptr<ob::ModelMotionValidator> model_mv_;
 
