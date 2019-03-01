@@ -46,6 +46,6 @@
   <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find rotors_planner)/model/simple_box.urdf'" />
   <node name="spawn_gazebo_model" pkg="gazebo_ros" type="spawn_model" 
     args="-urdf -param robot_description -model $(arg robot_name)
-      -x 0 -y -20 -z 1.5" respawn="false" output="screen" />
+      -x -7 -y -20 -z 1.5" respawn="false" output="screen" />
 
 </launch>

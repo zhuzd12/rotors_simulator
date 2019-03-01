@@ -203,7 +203,7 @@ bool propagationFn(StatePropagatorFn model, ControllerFn controller, const ob::S
 }
 
 /* define the state validation fucntion */
-bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_, fcl::CollisionObjectd* obstacle_obj, const ob::State *state)
+bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_, fcl::CollisionObjectd* &obstacle_obj, const ob::State *state)
 {
   // extract the position and construct the MAV box
   const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
@@ -337,11 +337,11 @@ void DynConfigCallback(ros::ServiceClient &client, ob::SpaceInformationPtr &si, 
   model_state_srv_msg.request.model_state.reference_frame = "world";
   if(client.call(model_state_srv_msg))
     ROS_ERROR("obstacle update");
-  // update state validation function
+
   // construct the obstacle box
   Eigen::Vector3d current_angular(0,0,0);
   Eigen::Vector3d current_position(config.p_x, config.p_y, config.p_z);
-  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (1.0, 0.5, 2.5));
+  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (4.0, 0.5, 2.5));
   fcl::Matrix3d R;
   R = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
       * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
@@ -350,8 +350,8 @@ void DynConfigCallback(ros::ServiceClient &client, ob::SpaceInformationPtr &si, 
   tf.setIdentity();
   tf.linear() = R;
   tf.translation() = current_position;
-  if(obstacle_obj)
-    delete obstacle_obj;
+  // if(obstacle_obj)
+  //   delete obstacle_obj;
   obstacle_obj = new fcl::CollisionObjectd(boxGeometry, tf);
   // si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
   // si->setup();
@@ -531,7 +531,7 @@ int main(int argc, char **argv)
 
   // set state validity checking for state space
   ob::SpaceInformationPtr si(new ob::SpaceInformation(stateSpace));
-  si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, nullptr, std::placeholders::_1));
+  si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
 
   // set dynamic configure
   f = boost::bind(&DynConfigCallback, set_model_state_client, si, octomap_, _1, _2);
@@ -793,16 +793,16 @@ int main(int argc, char **argv)
   obstacle_maker.id = 0;
   obstacle_maker.type = visualization_msgs::Marker::CUBE;
   obstacle_maker.action = visualization_msgs::Marker::ADD;
-  obstacle_maker.scale.x = 1;
+  obstacle_maker.scale.x = 4.0;
   obstacle_maker.scale.y = 0.5;
   obstacle_maker.scale.z = 3.0;
   obstacle_maker.color.a = 1.0; 
   obstacle_maker.color.r = 1.0;
   obstacle_maker.color.g = 0.0;
   obstacle_maker.color.b = 0.0;
-  obstacle_maker.pose.position.x = obstacle_obj_x + 0.5;
-  obstacle_maker.pose.position.y = obstacle_obj_y + 0.25;
-  obstacle_maker.pose.position.z = obstacle_obj_z + 1.5; 
+  obstacle_maker.pose.position.x = obstacle_obj_x;
+  obstacle_maker.pose.position.y = obstacle_obj_y;
+  obstacle_maker.pose.position.z = obstacle_obj_z; 
   obstacle_maker.pose.orientation.x = 0.0;
   obstacle_maker.pose.orientation.y = 0.0;
   obstacle_maker.pose.orientation.z = 0.0;
@@ -852,7 +852,7 @@ int main(int argc, char **argv)
    while (ros::ok()) {
     
     // trajectory_pub.publish(msg);
-    // ros::spinOnce();
+    ros::spinOnce();
 
     // update state validtity function
     if(obstacle_update)

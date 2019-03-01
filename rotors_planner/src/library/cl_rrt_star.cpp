@@ -1078,6 +1078,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
         bool path_validity = true;
         if(approach_dis < 0.5 || model_mv_->checkMotion(current_state, solution_nearst_state))
         {
+            OMPL_DEBUG("debug1");
             // set the solution path
             std::vector<Motion *> mpath;
             Motion *iterMotion = current_motion;
@@ -1093,6 +1094,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
                 mpath.push_back(iterMotion);
                 iterMotion = iterMotion->parent;
             }
+            OMPL_DEBUG("debug2");
             
             if(path_validity && !result)
             {
