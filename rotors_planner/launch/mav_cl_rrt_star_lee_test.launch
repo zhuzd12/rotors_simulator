@@ -47,5 +47,7 @@
   <node name="spawn_gazebo_model" pkg="gazebo_ros" type="spawn_model" 
     args="-urdf -param robot_description -model $(arg robot_name)
       -x -7 -y -20 -z 1.5" respawn="false" output="screen" />
+  
+  <!-- <node pkg="rotors_planner" name="cl_rrt_star_logger" type="logger.py" output="screen"/> -->
 
 </launch>

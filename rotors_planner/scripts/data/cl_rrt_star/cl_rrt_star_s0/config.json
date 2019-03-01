@@ -1,0 +1,33 @@
+{
+    "exp_name":	"cl_rrt_star",
+    "info_list":	[
+        "loop",
+        "prediction",
+        "trackerror",
+        "treesize",
+        "prunetreesize"
+    ],
+    "logger_kwargs":	{
+        "exp_name":	"cl_rrt_star",
+        "output_dir":	"/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_star/cl_rrt_star_s0"
+    },
+    "self":	{
+        "<__main__.PlannerLogger object at 0x7f8cf87a5f28>":	{
+            "planner_logger":	{
+                "<spinup.utils.logx.EpochLogger object at 0x7f8cf87a5f60>":	{
+                    "epoch_dict":	{},
+                    "exp_name":	"cl_rrt_star",
+                    "first_row":	true,
+                    "log_current_row":	{},
+                    "log_headers":	[],
+                    "output_dir":	"/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_star/cl_rrt_star_s0",
+                    "output_file":	{
+                        "<_io.TextIOWrapper name='/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_star/cl_rrt_star_s0/progress.txt' mode='w' encoding='UTF-8'>":	{
+                            "mode":	"w"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

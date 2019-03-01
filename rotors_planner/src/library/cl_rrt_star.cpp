@@ -219,7 +219,8 @@ int CL_RRTstar::onlinePruneTree(const ob::State * current_state)
     }
     assert(solution_motions[new_root_index] == new_root_motion);
     OMPL_INFORM("min distance between current state and old solution path: %lf, index: %d", min_dis, new_root_index);
-
+    predicted_time_ = new_root_motion->time;
+    tracking_error_ = min_dis;
     // clear pdef_
     OMPL_INFORM("old solution nodes num: %d", int(solution_motions.size()));
     // std::vector< ob::PlannerSolution > solutions = pdef_->getSolutions();
@@ -438,7 +439,9 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
     const ob::State *st = pdef_->getStartState(0);
     // std::stringstream ss;
     si_->printState(st);
+    std::clock_t start_time;
     int pre_plan_prune_nodes = onlinePruneTree(st);
+    pruned_nodes_num_ = pre_plan_prune_nodes;
     plan_loop_++;
     OMPL_INFORM("planning loop: %d, %d nodes pruned before planning.", plan_loop_, pre_plan_prune_nodes);
 
@@ -1030,10 +1033,10 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
         for (auto &goalMotion : goalMotions_)
         {
             goal_motion_que.push(goalMotion);
-            // OMPL_DEBUG("solution cost: %lf", goalMotion->cost.value());
+            OMPL_DEBUG("solution cost: %lf", goalMotion->cost.value());
         }
-        // OMPL_DEBUG("best cost: %lf", bestGoalMotion_->cost.value());
-        // OMPL_DEBUG("top cost: %lf", goal_motion_que.top()->cost.value());
+        OMPL_DEBUG("best cost: %lf", bestGoalMotion_->cost.value());
+        OMPL_DEBUG("top cost: %lf", goal_motion_que.top()->cost.value());
         goalMotions_.clear();
 
     }
@@ -1053,7 +1056,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
     {
         i++;
         Motion *current_motion = goal_motion_que.top();
-        if(bestGoalMotion_)
+        if(bestGoalMotion_ && !result)
         {
             bestGoalMotion_ = goal_motion_que.top();
             bestCost_ = bestGoalMotion_->cost;
@@ -1078,7 +1081,6 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
         bool path_validity = true;
         if(approach_dis < 0.5 || model_mv_->checkMotion(current_state, solution_nearst_state))
         {
-            OMPL_DEBUG("debug1");
             // set the solution path
             std::vector<Motion *> mpath;
             Motion *iterMotion = current_motion;
@@ -1094,7 +1096,6 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
                 mpath.push_back(iterMotion);
                 iterMotion = iterMotion->parent;
             }
-            OMPL_DEBUG("debug2");
             
             if(path_validity && !result)
             {

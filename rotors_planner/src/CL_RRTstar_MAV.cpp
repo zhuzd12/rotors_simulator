@@ -6,6 +6,7 @@
 #include <sensor_msgs/Imu.h>
 #include <trajectory_msgs/MultiDOFJointTrajectory.h>
 #include <visualization_msgs/Marker.h>
+#include <std_msgs/Float64MultiArray.h>
 #include<algorithm>
 
 // octomap library header
@@ -394,6 +395,8 @@ int main(int argc, char **argv)
   
   // f = boost::bind(&DynConfigCallback, set_model_state_client, si, _1, _2);
   // dyn_config_server.setCallback(f);
+  ros::Publisher planning_info_pub = nh.advertise<std_msgs::Float64MultiArray>("/planning_info", 10);
+  std_msgs::Float64MultiArray planning_info;
 
   ROS_INFO("Wait for simulation to become ready...");
 
@@ -849,6 +852,7 @@ int main(int argc, char **argv)
 
   std::shared_ptr<ompl::geometric::PathGeometric> real_time_best_path;
   ros::spinOnce();
+  double loops = 0.0;
    while (ros::ok()) {
     
     // trajectory_pub.publish(msg);
@@ -1002,6 +1006,14 @@ int main(int argc, char **argv)
     if(show_tree)
         marker_pub.publish(line_tree);    
     // octomap_pub.publish(octo_msg);
+    loops += 1.0*loop_plan_time;
+    planning_info.data.clear();
+    planning_info.data.push_back(loops);
+    planning_info.data.push_back(planner->getPredictionEstimation());
+    planning_info.data.push_back(planner->getLoopTrackingError());
+    planning_info.data.push_back(planner->getTreeSize());
+    planning_info.data.push_back(planner->getPruneTreeSize());
+    planning_info_pub.publish(planning_info);
     ros::spinOnce();
   }
   

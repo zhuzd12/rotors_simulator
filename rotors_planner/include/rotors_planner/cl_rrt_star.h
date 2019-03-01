@@ -300,7 +300,36 @@ namespace rotors_planner_rrtstar
             return startMotions_[0];
         }
 
+        unsigned int getTreeSize()
+        {
+            if(nn_)
+                return nn_->size();
+            else
+                return 0;
+        }
+
+        double getPredictionEstimation()
+        {
+            return predicted_time_;
+        }
+
+        double getLoopTrackingError()
+        {
+            return tracking_error_;
+        }
+
+        unsigned int getPruneTreeSize()
+        {
+            return pruned_nodes_num_;
+        }
+
     protected:
+
+        double predicted_time_{0};
+
+        double tracking_error_{0};
+
+        unsigned int pruned_nodes_num_{0};
         
         void allocSampler();
 
