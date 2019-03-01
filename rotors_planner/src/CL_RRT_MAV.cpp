@@ -389,7 +389,7 @@ int main(int argc, char **argv)
   angular_vel->as<ob::RealVectorStateSpace>()->setBounds(bounds);
   
   size_t rotors_size = lee_position_controller_.vehicle_parameters_.rotor_configuration_.rotors.size();
-  ROS_INFO("rotor size: %d", rotors_size);
+  ROS_INFO("rotor size: %d", int (rotors_size));
   oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(stateSpace, rotors_size));
   // set the bounds for the control space
   ob::RealVectorBounds cbounds(rotors_size);

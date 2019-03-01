@@ -1,6 +1,6 @@
 # target waypoint corridinate
-target_x: -10.0
-target_y: 42.0
+target_x: -7.0 #-10.0
+target_y: 32.0 # 42.0
 target_z: 1.0
 target_yaw: 0.0
 
@@ -26,6 +26,11 @@ planner:
   sample_connect_range: 5.0
   setKNearest: true
   path_replan_deviation: 1.0
+  goalbias: 0.10
+  useAdmissibleCostToCome: true
+  useRejectionSampling: true
+  useNewStateRejection: false
+  useTreePruning: false
   useTrejectoryExpansion: true
 
 rviz:

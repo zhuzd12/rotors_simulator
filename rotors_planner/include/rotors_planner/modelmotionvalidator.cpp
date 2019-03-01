@@ -22,6 +22,8 @@ bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State 
     int st_loop = 0;
     double dis_to_target_ = si_->distance(s1, s2);
     double accumulate_distance_ = 0.0;
+    int segment_loops = 0;
+    int segments = 0;
     State *current_State = si_->allocState();
     State *next_State = si_->allocState();
     si_->copyState(current_State, s1);
@@ -31,6 +33,7 @@ bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State 
         Controlfn_(current_State, s2, duration_, next_State);
 
         accumulate_distance_ = accumulate_distance_ + si_->distance(current_State, next_State);
+        segment_loops++;
         dis_to_target_ = si_->distance(current_State, s2);
         if(accumulate_distance_ >= path_resolution_ || dis_to_target_ < path_deviation_)
         {
@@ -42,12 +45,17 @@ bool ompl::base::ModelMotionValidator::checkMotion(const State *s1, const State 
                 OMPL_DEBUG("shit");
                 return false;
             }
+            state_sequence.push_back(si_->allocState());
+            si_->copyState(state_sequence[segments], next_State);
+            time_stamps.push_back(double(segment_loops)*duration_);
             accumulate_distance_ = 0.0;
+            segment_loops = 0;
+            segments++;
         }
 
-        state_sequence.push_back(si_->allocState());
-        si_->copyState(state_sequence[st_loop], next_State);
-        time_stamps.push_back(double(st_loop+1)*duration_);
+        // state_sequence.push_back(si_->allocState());
+        // si_->copyState(state_sequence[st_loop], next_State);
+        // time_stamps.push_back(double(st_loop+1)*duration_);
 
         si_->copyState(current_State, next_State);
         st_loop ++;

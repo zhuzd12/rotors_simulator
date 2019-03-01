@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
     sensor_msgs
     rotors_comm
     rotors_control
+    dynamic_reconfigure
     )
 
 
@@ -24,7 +25,7 @@ find_package(ompl REQUIRED)
 find_package(FCL REQUIRED)
 find_package(CCD REQUIRED)
 # find_package(octomap REQUIRED)
-
+generate_dynamic_reconfigure_options(cfg/modelreset.cfg)
 
 ## The catkin_package macro generates cmake config files for your package
 ## Declare things to be passed to dependent projects
@@ -102,7 +103,7 @@ target_link_libraries(CL_RRTstar_MAV cl_rrt_star
     ${OMPL_LIBRARIES} 
     ${FCL_LIBRARIES}
     ${CCD_LIBRARIES})
-add_dependencies(CL_RRTstar_MAV ${catkin_EXPORTED_TARGETS})
+add_dependencies(CL_RRTstar_MAV ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
 
 install(TARGETS cl_rrt
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

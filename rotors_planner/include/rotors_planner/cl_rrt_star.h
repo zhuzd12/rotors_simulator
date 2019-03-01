@@ -77,6 +77,11 @@ namespace rotors_planner_rrtstar
 
         void setup() override;
 
+        ob::SpaceInformationPtr getSpaceInformation()
+        {
+            return si_;
+        }
+
         void setSampleCleanerFn(samplercleanerFn &svc)
         {
             samplerCleanerFn_ = svc;
@@ -369,7 +374,7 @@ namespace rotors_planner_rrtstar
 
         double path_replan_deviation_{0.5};
 
-        double goalBias_{.05};
+        double goalBias_{.10};
 
         double maxDistance_{1.};
 

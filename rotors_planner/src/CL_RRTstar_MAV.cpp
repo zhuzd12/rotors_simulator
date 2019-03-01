@@ -52,6 +52,12 @@
 #include "rotors_planner/common.h"
 
 #include <Eigen/Dense>
+#include <gazebo_msgs/SetModelState.h>
+#include <gazebo_msgs/GetModelState.h>
+#include <dynamic_reconfigure/server.h>
+#include <rotors_planner/modelresetConfig.h>
+#include <gazebo_msgs/SpawnModel.h>
+
 
 namespace oc = ompl::control;
 namespace ob = ompl::base;
@@ -197,7 +203,7 @@ bool propagationFn(StatePropagatorFn model, ControllerFn controller, const ob::S
 }
 
 /* define the state validation fucntion */
-bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_, const ob::State *state)
+bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_, fcl::CollisionObjectd* obstacle_obj, const ob::State *state)
 {
   // extract the position and construct the MAV box
   const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
@@ -229,7 +235,17 @@ bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_
 
   fcl::collide(env_obj, uav_obj, request, result);
 
-  return si->satisfiesBounds(state) && !result.isCollision();
+  bool obstacle_free = true;
+  if(obstacle_obj)
+  {
+    fcl::CollisionRequest<double> request_obs;
+    fcl::CollisionResult<double> result_obs;
+    request.num_max_contacts = 5;
+    fcl::collide(obstacle_obj, uav_obj, request_obs, result_obs);
+    obstacle_free = !result_obs.isCollision();
+  }
+
+  return si->satisfiesBounds(state) && !result.isCollision() &&  obstacle_free;
   //return !result.isCollision();
 
 }
@@ -286,12 +302,79 @@ std::fill(velocity, velocity+3, 0.0);
 std::fill(angular_vel, angular_vel+3, 0.0);
 }
 
+bool obstacle_update = false;
+fcl::CollisionObjectd* obstacle_obj;
+double obstacle_obj_x, obstacle_obj_y, obstacle_obj_z;
+
+void DynConfigCallback(ros::ServiceClient &client, ob::SpaceInformationPtr &si, octomap::OcTree *octomap_, rotors_planner::modelresetConfig &config, uint32_t level)
+{
+  ROS_ERROR("dynamic configure update");
+  ROS_ERROR("x: %lf, y: %lf, z: %lf", config.p_x, config.p_y, config.p_z);
+  obstacle_obj_x = config.p_x;
+  obstacle_obj_y = config.p_y;
+  obstacle_obj_z = config.p_z;
+  obstacle_update = true;
+  gazebo_msgs::SetModelState model_state_srv_msg;
+  model_state_srv_msg.request.model_state.model_name = "simple_box";
+  model_state_srv_msg.request.model_state.pose.position.x = config.p_x;
+  model_state_srv_msg.request.model_state.pose.position.y = config.p_y;
+  model_state_srv_msg.request.model_state.pose.position.z = config.p_z;
+  
+  model_state_srv_msg.request.model_state.pose.orientation.x = 0.0;
+  model_state_srv_msg.request.model_state.pose.orientation.y = 0.0;
+  model_state_srv_msg.request.model_state.pose.orientation.z = 0.0;
+  model_state_srv_msg.request.model_state.pose.orientation.w = 1.0;
+  
+  
+  model_state_srv_msg.request.model_state.twist.linear.x= 0.00; //2cm/sec
+  model_state_srv_msg.request.model_state.twist.linear.y= 0.0;
+  model_state_srv_msg.request.model_state.twist.linear.z= 0.0;
+  
+  model_state_srv_msg.request.model_state.twist.angular.x= 0.0;
+  model_state_srv_msg.request.model_state.twist.angular.y= 0.0;
+  model_state_srv_msg.request.model_state.twist.angular.z= 1.0;
+      
+  model_state_srv_msg.request.model_state.reference_frame = "world";
+  if(client.call(model_state_srv_msg))
+    ROS_ERROR("obstacle update");
+  // update state validation function
+  // construct the obstacle box
+  Eigen::Vector3d current_angular(0,0,0);
+  Eigen::Vector3d current_position(config.p_x, config.p_y, config.p_z);
+  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (1.0, 0.5, 2.5));
+  fcl::Matrix3d R;
+  R = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
+      * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
+      * Eigen::AngleAxisd(current_angular[0], Eigen::Vector3d::UnitX());
+  fcl::Transform3d tf;
+  tf.setIdentity();
+  tf.linear() = R;
+  tf.translation() = current_position;
+  if(obstacle_obj)
+    delete obstacle_obj;
+  obstacle_obj = new fcl::CollisionObjectd(boxGeometry, tf);
+  // si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
+  // si->setup();
+  return;
+}
+
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "CL_RRTstar_MAV");
   ros::NodeHandle nh, pnh("~");
   std::string mav_name_;
   bool ifget_ = ros::param::get("mav_name", mav_name_);
+
+  ros::Duration half_sec(0.5);
+    
+  // make sure service is available before attempting to proceed, else node will crash
+  bool service_ready = false;
+  while (!service_ready) {
+    service_ready = ros::service::exists("/gazebo/set_model_state",true);
+    ROS_INFO("waiting for set_model_state service");
+    half_sec.sleep();
+  }
+  ROS_INFO("set_model_state service exists");
 
   // The IMU is used, to determine if the simulator is running or not.
   ros::Subscriber sub = nh.subscribe("imu", 10, &callback);
@@ -304,6 +387,13 @@ int main(int argc, char **argv)
   mav_msgs::default_topics::COMMAND_TRAJECTORY, 10);
 
   ros::Publisher octomap_pub = nh.advertise<octomap_msgs::Octomap>("/octo_test", 10);
+
+  ros::ServiceClient set_model_state_client = nh.serviceClient<gazebo_msgs::SetModelState>("/gazebo/set_model_state");
+  dynamic_reconfigure::Server<rotors_planner::modelresetConfig> dyn_config_server;
+  dynamic_reconfigure::Server<rotors_planner::modelresetConfig>::CallbackType f;
+  
+  // f = boost::bind(&DynConfigCallback, set_model_state_client, si, _1, _2);
+  // dyn_config_server.setCallback(f);
 
   ROS_INFO("Wait for simulation to become ready...");
 
@@ -418,7 +508,7 @@ int main(int argc, char **argv)
 
   // construct an instance of space information from this control space
   //   oc::SpaceInformationPtr si(new oc::SpaceInformation(stateSpace, cspace));
-  ob::SpaceInformationPtr si(new ob::SpaceInformation(stateSpace));
+  // ob::SpaceInformationPtr si(new ob::SpaceInformation(stateSpace));
   
 
   // load octomap 
@@ -431,16 +521,21 @@ int main(int argc, char **argv)
   octomap_ = new octomap::OcTree(octo_file);
   double tree_metricx, tree_metricy, tree_metricz;
   octomap_->getMetricMax(tree_metricx, tree_metricy, tree_metricz);
-    std::cout<< "octotree nodes: "<< octomap_->calcNumNodes()<<std::endl;
-    std::cout<< "occupancy threshold: "<< octomap_->getOccupancyThres()<<std::endl;
-    std::cout<< "octotree resolution: "<< octomap_->getResolution()<<std::endl;
-    std::cout<< "octotree max metrix: "<< tree_metricx << " " << tree_metricy << " " << tree_metricz <<std::endl;
-    octomap_->getMetricMin(tree_metricx, tree_metricy, tree_metricz);
-    std::cout<< "octotree min metrix: "<< tree_metricx << " " << tree_metricy << " " << tree_metricz <<std::endl;
+  std::cout<< "octotree nodes: "<< octomap_->calcNumNodes()<<std::endl;
+  std::cout<< "occupancy threshold: "<< octomap_->getOccupancyThres()<<std::endl;
+  std::cout<< "octotree resolution: "<< octomap_->getResolution()<<std::endl;
+  std::cout<< "octotree max metrix: "<< tree_metricx << " " << tree_metricy << " " << tree_metricz <<std::endl;
+  octomap_->getMetricMin(tree_metricx, tree_metricy, tree_metricz);
+  std::cout<< "octotree min metrix: "<< tree_metricx << " " << tree_metricy << " " << tree_metricz <<std::endl;
   ROS_INFO("octomap file read successfully");
 
   // set state validity checking for state space
-  si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, std::placeholders::_1));
+  ob::SpaceInformationPtr si(new ob::SpaceInformation(stateSpace));
+  si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, nullptr, std::placeholders::_1));
+
+  // set dynamic configure
+  f = boost::bind(&DynConfigCallback, set_model_state_client, si, octomap_, _1, _2);
+  dyn_config_server.setCallback(f);
   
 
   // set start point 
@@ -476,6 +571,12 @@ int main(int argc, char **argv)
   bool use_propagation, useKNearest;
   double path_replan_deviation;
   bool useTrejectoryExpansion;
+  double goalbias;
+  double useAdmissibleCostToCome;
+  double useRejectionSampling;
+  double useNewStateRejection;
+  double useTreePruning;
+
   pnh.getParam("planner/path_deviation", path_deviation);
   pnh.getParam("planner/path_resolution", path_resolution);
   pnh.getParam("planner/sample_connect_range", sample_max_range);
@@ -485,6 +586,11 @@ int main(int argc, char **argv)
   pnh.getParam("planner/setKNearest", useKNearest);
   pnh.getParam("planner/path_replan_deviation", path_replan_deviation);
   pnh.getParam("planner/useTrejectoryExpansion", useTrejectoryExpansion);
+  pnh.getParam("planner/goalbias", goalbias);
+  pnh.getParam("planner/useAdmissibleCostToCome", useAdmissibleCostToCome);
+  pnh.getParam("planner/useRejectionSampling", useRejectionSampling);
+  pnh.getParam("planner/useNewStateRejection", useNewStateRejection);
+  pnh.getParam("planner/useTreePruning", useTreePruning);
   
   StatePropagatorFn model = std::bind(&Hexacopterpropagate, step_size, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
@@ -546,6 +652,11 @@ int main(int argc, char **argv)
   planner->setTrejectoryExpansion(useTrejectoryExpansion);
   planner->setReplanPathDeviation(path_replan_deviation);
   planner->setSampleDimension(3);
+  planner->setGoalBias(goalbias);
+  planner->setAdmissibleCostToCome(useAdmissibleCostToCome);
+  planner->setSampleRejection(useRejectionSampling);
+  planner->setNewStateRejection(useNewStateRejection);
+  planner->setTreePruning(useTreePruning);
   std::shared_ptr<ob::ModelMotionValidator> m_v(new ob::ModelMotionValidator(si, path_resolution, max_loop, waypoint_interval, std::bind(&propagationFn, model, controller, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)));
   planner->setMV(m_v);
   // planner->setMinRange(0.20);
@@ -675,6 +786,28 @@ int main(int argc, char **argv)
   goal_point.z = heading_position[2];
   points.points.push_back(goal_point);
 
+  visualization_msgs::Marker obstacle_maker;
+  obstacle_maker.header.frame_id = "/world";
+  obstacle_maker.header.stamp =ros::Time();
+  obstacle_maker.ns = "obstacle";
+  obstacle_maker.id = 0;
+  obstacle_maker.type = visualization_msgs::Marker::CUBE;
+  obstacle_maker.action = visualization_msgs::Marker::ADD;
+  obstacle_maker.scale.x = 1;
+  obstacle_maker.scale.y = 0.5;
+  obstacle_maker.scale.z = 3.0;
+  obstacle_maker.color.a = 1.0; 
+  obstacle_maker.color.r = 1.0;
+  obstacle_maker.color.g = 0.0;
+  obstacle_maker.color.b = 0.0;
+  obstacle_maker.pose.position.x = obstacle_obj_x + 0.5;
+  obstacle_maker.pose.position.y = obstacle_obj_y + 0.25;
+  obstacle_maker.pose.position.z = obstacle_obj_z + 1.5; 
+  obstacle_maker.pose.orientation.x = 0.0;
+  obstacle_maker.pose.orientation.y = 0.0;
+  obstacle_maker.pose.orientation.z = 0.0;
+  obstacle_maker.pose.orientation.w = 1.0;
+
   /*
   for (size_t i = 0; i < solution_states.size(); ++i)
   {
@@ -720,6 +853,18 @@ int main(int argc, char **argv)
     
     // trajectory_pub.publish(msg);
     // ros::spinOnce();
+
+    // update state validtity function
+    if(obstacle_update)
+    {
+      obstacle_update = false;
+      ROS_ERROR("update state validity checker");
+      planner->getSpaceInformation()->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
+      planner->getSpaceInformation()->setup();
+      obstacle_maker.pose.position.x = obstacle_obj_x;
+      obstacle_maker.pose.position.y = obstacle_obj_y;
+      obstacle_maker.pose.position.z = obstacle_obj_z;
+    }
     Eigen::Vector3d update_position_vector = current_odometry.position;
     update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
     
@@ -853,6 +998,7 @@ int main(int argc, char **argv)
     marker_pub.publish(line_actual);
     marker_pub.publish(points);
     marker_pub.publish(line_strip);
+    marker_pub.publish(obstacle_maker);
     if(show_tree)
         marker_pub.publish(line_tree);    
     // octomap_pub.publish(octo_msg);

@@ -26,7 +26,12 @@ planner:
   sample_connect_range: 2.0
   setKNearest: True
   path_replan_deviation: 0.5
-  useTrejectoryExpansion: false
+  goalbias: 0.1
+  useAdmissibleCostToCome: true
+  useRejectionSampling: false
+  useNewStateRejection: false
+  useTreePruning: false
+  useTrejectoryExpansion: true
 
 rviz:
   show_tree: false

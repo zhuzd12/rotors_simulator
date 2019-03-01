@@ -225,7 +225,7 @@ int CL_RRTstar::onlinePruneTree(const ob::State * current_state)
     // std::vector< ob::PlannerSolution > solutions = pdef_->getSolutions();
     pdef_->clearSolutionPaths();
 
-    if((!find_root && min_dis > 100.00) || new_root_index==0)
+    if((!find_root && min_dis > path_replan_deviation_) || new_root_index==0)
     {
         OMPL_INFORM("previous info can be discarded totally");
         freeMemory();
@@ -270,7 +270,21 @@ int CL_RRTstar::onlinePruneTree(const ob::State * current_state)
         new_root_motion->parent = nullptr;
         updateChildCosts(new_root_motion);
 
-        int predict_root_index = new_root_index - std::ceil(loop_plan_time_/0.1);
+        // int predict_root_index = new_root_index - std::ceil(loop_plan_time_/0.1);
+
+        // if(predict_root_index <= 0)
+        // {
+        //     OMPL_DEBUG("not enough for prediction, predicted root index: %d", predict_root_index);
+        //     predict_root_index = 0;
+        // }
+        double propagation_time = loop_plan_time_;
+        
+        int predict_root_index = new_root_index-1;
+        while(propagation_time>0 && predict_root_index>0)
+        {
+            propagation_time -= solution_motions[predict_root_index]->intime;
+            predict_root_index--;
+        }
 
         if(predict_root_index <= 0)
         {
@@ -487,6 +501,8 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
     CostIndexCompare compareFn(costs, *opt_);
 
     bool solution_updated = false;
+    std::pair<ob::State *, double> sample_lastValid;
+    sample_lastValid.first = si_->allocState();
     while (ptc == false)
     {
         iterations_++;
@@ -524,22 +540,25 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
         samplerCleanerFn_(si_, dstate);
 
         // Check if the motion between the nearest state and the state to add is valid
-        std::pair<ob::State *, double> lastValid;
-        // lastValid.first = si_->allocState();
-        if (model_mv_->checkMotion(nmotion->state, dstate, lastValid))
+        bool sample_propagation = model_mv_->checkMotion(nmotion->state, dstate, sample_lastValid);
+        if (sample_propagation) // || sample_lastValid.second > 0)
         {
             // create a motion
             auto *motion = new Motion(si_);
             si_->copyState(motion->state, dstate);
-
-            // si_->copyState(motion->state, lastValid.first);
-            // si_->freeState(lastValid.first);
+            if(!sample_propagation)
+            {
+                OMPL_DEBUG("save last valid state as new sample motion time: %lf", sample_lastValid.second);
+                // si_->printState(sample_lastValid.first);
+                samplerCleanerFn_(si_, sample_lastValid.first);
+                si_->copyState(motion->state, sample_lastValid.first);
+            }
 
             motion->parent = nmotion;
             motion->incCost = opt_->motionCost(nmotion->state, motion->state);
             motion->cost = opt_->combineCosts(nmotion->cost, motion->incCost);
-            motion->intime = lastValid.second;
-            motion->time = lastValid.second + nmotion->time;
+            motion->intime = sample_lastValid.second;
+            motion->time = sample_lastValid.second + nmotion->time;
 
             // Find nearby neighbors of the new motion
             getNeighbors(motion, nbh);
@@ -569,7 +588,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             // Finding the nearest neighbor to connect to
             // By default, neighborhood states are sorted by cost, and collision checking
             // is performed in increasing order of cost
-            int index_s = 0;
+            int index_s = -1;
             if (delayCC_)
             {
                 // calculate all costs and distances
@@ -661,6 +680,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             }
             
             Motion *connected_motion = motion->parent;
+            assert(index_s != -1);
             assert(connected_motion == nbh[index_s]);
             // OMPL_DEBUG("nbh size: %u", nbh.size());
             if (!useNewStateRejection_ || (useNewStateRejection_ && opt_->isCostBetterThan(solutionHeuristic(motion), bestCost_)))
@@ -675,24 +695,6 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                     bool recheck = model_mv_->checkMotion(connected_motion->state, motion->state, trajectory_states, time_stamps);
                     if(!recheck)
                     {
-                        // std::pair<ob::State *, double> lastValid_de;
-                        // OMPL_DEBUG("function 0 suc");
-                        // assert(connected_motion->state != nullptr);
-                        // si_->printState(connected_motion->state);
-                        // si_->printState(motion->state);
-                        // if(!si_->checkMotion(connected_motion->state, motion->state, lastValid_de))
-                        //     OMPL_DEBUG("function 3 failed");
-                        // else
-                        //     OMPL_DEBUG("function 3 suc");
-                        // if(!model_mv_->checkMotion(connected_motion->state, motion->state, lastValid_de))
-                        //     OMPL_DEBUG("function 2 failed");
-                        // else
-                        //     OMPL_DEBUG("function 2 suc");
-                        // if(!model_mv_->checkMotion(connected_motion->state, motion->state))
-                        //     OMPL_DEBUG("function 1 failed");
-                        // else
-                        //     OMPL_DEBUG("function 1 suc");
-
                         si_->freeState(motion->state);
                         delete motion;
                         OMPL_WARN("trajectory propagation failed");
@@ -728,8 +730,6 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                 }
                 else
                 {
-                    si_->copyState(motion->state, lastValid.first);
-                    si_->freeState(lastValid.first);
                     nn_->add(motion);
                     motion->parent->children.push_back(motion);
                 }
@@ -996,6 +996,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
     // No else, we have nothing
 
     si_->freeState(xstate);
+    si_->freeState(sample_lastValid.first);
     if (rmotion->state)
         si_->freeState(rmotion->state);
     delete rmotion;
@@ -1012,7 +1013,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
 {
     bool result = false;
     time_stamps.clear();
-    if(!pdef_->hasSolution())
+    if(!pdef_->hasSolution() || (!approxGoalMotion_ && !bestGoalMotion_))
     {
         OMPL_INFORM("no solution to repropagate");
         return result;
@@ -1027,7 +1028,14 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
     else
     {
         for (auto &goalMotion : goalMotions_)
+        {
             goal_motion_que.push(goalMotion);
+            // OMPL_DEBUG("solution cost: %lf", goalMotion->cost.value());
+        }
+        // OMPL_DEBUG("best cost: %lf", bestGoalMotion_->cost.value());
+        // OMPL_DEBUG("top cost: %lf", goal_motion_que.top()->cost.value());
+        goalMotions_.clear();
+
     }
     
 
@@ -1039,7 +1047,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
     int i = 0;
     if(bestGoalMotion_)
     {
-        assert(bestGoalMotion_ == goal_motion_que.top());
+        assert(bestGoalMotion_->cost.value() == goal_motion_que.top()->cost.value());
     }
     while(!goal_motion_que.empty())
     {
@@ -1071,25 +1079,25 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
         if(approach_dis < 0.5 || model_mv_->checkMotion(current_state, solution_nearst_state))
         {
             // set the solution path
-            best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
-            time_stamps.clear();
             std::vector<Motion *> mpath;
             Motion *iterMotion = current_motion;
             while (iterMotion->state != solution_nearst_state)
             {         
-                // if(!si_->isValid(iterMotion->state))
-                // {
-                //     si_->printState(iterMotion->state);
-                //     path_validity = false;
-                //     OMPL_DEBUG("%d th solution recheck failed", i);
-                //     break;
-                // }
+                if(!si_->isValid(iterMotion->state))
+                {
+                    // si_->printState(iterMotion->state);
+                    path_validity = false;
+                    OMPL_DEBUG("%d th solution recheck failed", i);
+                    break;
+                }
                 mpath.push_back(iterMotion);
                 iterMotion = iterMotion->parent;
             }
             
-            if(path_validity)
+            if(path_validity && !result)
             {
+                time_stamps.clear();
+                best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
                 for (int i = mpath.size() - 1; i >= 0; --i)
                 {
                     best_path->append(mpath[i]->state);
@@ -1100,8 +1108,10 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
                 pdef_->addSolutionPath(psol);
                 result = true;
                 rePropagation_flag_ = true;
-                return result;
-            }        
+                // return result;
+            }
+            if(path_validity)
+                goalMotions_.push_back(current_motion);
             
         }
         else
@@ -1111,84 +1121,27 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
         goal_motion_que.pop();
 
     }
-    OMPL_WARN("repropagation failed and send stop trajecotry");
-    best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
-    best_path->append(current_state);
-    // Add the solution path.
-    ob::PlannerSolution psol(best_path);
-    pdef_->addSolutionPath(psol);
-    rePropagation_flag_ = false;
+    if(result)
+    {
+        OMPL_INFORM("repropagation success");
+        return result;
+    }
+    else
+    {
+        OMPL_WARN("repropagation failed and send stop trajecotry");
+        best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
+        best_path->append(current_state);
+        // Add the solution path.
+        ob::PlannerSolution psol(best_path);
+        pdef_->addSolutionPath(psol);
+        rePropagation_flag_ = false;
+        return result;
+    }
     // bestGoalMotion_ = nullptr;
     // approxGoalMotion_ = nullptr;
     // approxDist_= std::numeric_limits<double>::infinity();
 
-    return result;
-
-
-    // for(int i=0 ; i<solutions.size(); i++)
-    // {
-    //     ob::PlannerSolution current_solution = solutions[i];
-    //     ob::PathPtr current_path = current_solution.path_;
-    //     ompl::geometric::PathGeometric *current_geo_path = current_path->as<og::PathGeometric>();
-    //     if(!result)
-    //     {
-    //         std::vector< ob::State * > path_states = current_geo_path->getStates();
-    //         OMPL_INFORM("%d solution path states num %d", i, path_states.size());
-    //         // std::shared_ptr<ompl::NearestNeighbors<Motion *>> nnh_;
-    //         double approach_dis{std::numeric_limits<double>::infinity()};
-    //         ob::State *solution_nearst_state;
-    //         int index = 0;
-    //         for(int k=0; k<path_states.size(); k++)
-    //         {
-    //             if(si_->distance(current_state, path_states[k]) < approach_dis)
-    //             {
-    //                 approach_dis = si_->distance(current_state, path_states[k]);
-    //                 solution_nearst_state = path_states[k];
-    //                 index = k;
-    //             }
-    //         }
-    //         OMPL_INFORM("%d th solution nearest index %d", i, index);
-    //         bool path_validity = true;
-    //         if(si_->checkMotion(current_state, solution_nearst_state))
-    //         {
-    //             // set the solution path
-    //             best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
-                
-    //             for (int j = index; j < path_states.size(); j++)
-    //             {
-    //                 if(!si_->isValid(path_states[j]))
-    //                 {
-    //                     path_validity = false;
-    //                     OMPL_INFORM("%d th solution recheck failed", i);
-    //                     break;
-    //                 }
-    //                 best_path->append(path_states[j]);
-    //             }
-
-    //             if(path_validity)
-    //             {
-    //                 // Add the solution path.
-    //                 ob::PlannerSolution psol(best_path);
-    //                 pdef_->addSolutionPath(psol);
-    //                 result = true;
-    //             }        
-                
-    //         }
-    //         else
-    //         {
-    //             OMPL_INFORM("%d th solution repropagation failed", i);
-    //         }
-            
-    //     }
-        // OMPL_INFORM("debug1");
-        // OMPL_INFORM("after %d solution path states num %d", i, current_geo_path->getStates().size());
-        // si_->printState(current_geo_path->getStates()[2]);
-        // current_geo_path->freeMemory();
-        // OMPL_INFORM("debug1");
-    // }
     // return result;
-
-
 }
 
 void CL_RRTstar::getNeighbors(Motion *motion, std::vector<Motion *> &nbh) const
