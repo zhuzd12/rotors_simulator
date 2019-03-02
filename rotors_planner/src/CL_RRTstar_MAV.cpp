@@ -305,6 +305,7 @@ std::fill(angular_vel, angular_vel+3, 0.0);
 
 bool obstacle_update = false;
 fcl::CollisionObjectd* obstacle_obj;
+fcl::CollisionObjectd* old_obstacle_obj;
 double obstacle_obj_x, obstacle_obj_y, obstacle_obj_z;
 
 void DynConfigCallback(ros::ServiceClient &client, ob::SpaceInformationPtr &si, octomap::OcTree *octomap_, rotors_planner::modelresetConfig &config, uint32_t level)
@@ -352,7 +353,7 @@ void DynConfigCallback(ros::ServiceClient &client, ob::SpaceInformationPtr &si, 
   tf.linear() = R;
   tf.translation() = current_position;
   if(obstacle_obj)
-    delete obstacle_obj;
+    old_obstacle_obj = obstacle_obj;
   obstacle_obj = new fcl::CollisionObjectd(boxGeometry, tf);
   // si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
   // si->setup();
@@ -535,6 +536,8 @@ int main(int argc, char **argv)
   // set state validity checking for state space
   ob::SpaceInformationPtr si(new ob::SpaceInformation(stateSpace));
   si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
+  if(old_obstacle_obj)
+    delete old_obstacle_obj;
 
   // set dynamic configure
   f = boost::bind(&DynConfigCallback, set_model_state_client, si, octomap_, _1, _2);
@@ -579,6 +582,7 @@ int main(int argc, char **argv)
   double useRejectionSampling;
   double useNewStateRejection;
   double useTreePruning;
+  bool useSampleReUse, useTrajectoryConnection;
 
   pnh.getParam("planner/path_deviation", path_deviation);
   pnh.getParam("planner/path_resolution", path_resolution);
@@ -594,7 +598,9 @@ int main(int argc, char **argv)
   pnh.getParam("planner/useRejectionSampling", useRejectionSampling);
   pnh.getParam("planner/useNewStateRejection", useNewStateRejection);
   pnh.getParam("planner/useTreePruning", useTreePruning);
-  
+  pnh.getParam("planner/useSampleReUse", useSampleReUse);
+  pnh.getParam("planner/useTrajectoryConnection", useTrajectoryConnection);
+
   StatePropagatorFn model = std::bind(&Hexacopterpropagate, step_size, lee_position_controller_.controller_parameters_.allocation_matrix_, lee_position_controller_.vehicle_parameters_, si, std::placeholders::_1,
         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
   ControllerFn controller = std::bind(&Lee_controller, lee_position_controller_, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3); 
@@ -660,6 +666,8 @@ int main(int argc, char **argv)
   planner->setSampleRejection(useRejectionSampling);
   planner->setNewStateRejection(useNewStateRejection);
   planner->setTreePruning(useTreePruning);
+  planner->setSampleReUse(useSampleReUse);
+  planner->setTrajectoryConnection(useTrajectoryConnection);
   std::shared_ptr<ob::ModelMotionValidator> m_v(new ob::ModelMotionValidator(si, path_resolution, max_loop, waypoint_interval, std::bind(&propagationFn, model, controller, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)));
   planner->setMV(m_v);
   // planner->setMinRange(0.20);
@@ -858,17 +866,17 @@ int main(int argc, char **argv)
     // trajectory_pub.publish(msg);
     ros::spinOnce();
 
-    // update state validtity function
-    if(obstacle_update)
-    {
-      obstacle_update = false;
-      ROS_ERROR("update state validity checker");
-      planner->getSpaceInformation()->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
-      planner->getSpaceInformation()->setup();
-      obstacle_maker.pose.position.x = obstacle_obj_x;
-      obstacle_maker.pose.position.y = obstacle_obj_y;
-      obstacle_maker.pose.position.z = obstacle_obj_z;
-    }
+    // // update state validtity function
+    // if(obstacle_update)
+    // {
+    //   obstacle_update = false;
+    //   ROS_ERROR("update state validity checker");
+    //   planner->getSpaceInformation()->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
+    //   planner->getSpaceInformation()->setup();
+    //   obstacle_maker.pose.position.x = obstacle_obj_x;
+    //   obstacle_maker.pose.position.y = obstacle_obj_y;
+    //   obstacle_maker.pose.position.z = obstacle_obj_z;
+    // }
     Eigen::Vector3d update_position_vector = current_odometry.position;
     update_position[0] = update_position_vector[0]; update_position[1] = update_position_vector[1]; update_position[2] = update_position_vector[2];
     
@@ -923,6 +931,18 @@ int main(int argc, char **argv)
         trajectory_point.time_from_start_ns = time_from_start_ns;
         time_from_start_ns += static_cast<int64_t>(waypoint_interval * kNanoSecondsInSecond);
         mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &traj_msg->points[i]);
+    }
+
+    // update state validtity function
+    if(obstacle_update)
+    {
+      obstacle_update = false;
+      ROS_ERROR("update state validity checker");
+      planner->getSpaceInformation()->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
+      planner->getSpaceInformation()->setup();
+      obstacle_maker.pose.position.x = obstacle_obj_x;
+      obstacle_maker.pose.position.y = obstacle_obj_y;
+      obstacle_maker.pose.position.z = obstacle_obj_z;
     }
 
     //update marker line_strip
@@ -1027,6 +1047,8 @@ int main(int argc, char **argv)
     si->freeState(heading_state);
     if(update_state)
     si->freeState(update_state);
+  if(obstacle_obj)
+    delete obstacle_obj;
 
   ros::shutdown();
   return 0;

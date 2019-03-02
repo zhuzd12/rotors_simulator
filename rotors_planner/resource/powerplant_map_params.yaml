@@ -32,6 +32,8 @@ planner:
   useNewStateRejection: false
   useTreePruning: false
   useTrejectoryExpansion: true
+  useSampleReUse: true
+  useTrajectoryConnection: true
 
 rviz:
   show_tree: false

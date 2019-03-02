@@ -1,5 +1,5 @@
 # target waypoint corridinate
-target_x: -11.0
+target_x: -10.0
 target_y: 42.0
 target_z: 1.0
 target_yaw: 0.0
@@ -32,6 +32,8 @@ planner:
   useNewStateRejection: false
   useTreePruning: false
   useTrejectoryExpansion: true
+  useSampleReUse: true
+  useTrajectoryConnection: true
 
 rviz:
-  show_tree: false
+  show_tree: true

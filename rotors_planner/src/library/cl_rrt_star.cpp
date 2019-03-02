@@ -486,6 +486,10 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
     std::vector<ob::Cost> incCosts;
     std::vector<std::size_t> sortedCostIndices;
 
+    std::vector<ob::Cost> rewire_costs;
+    std::vector<ob::Cost> rewire_incCosts;
+    std::vector<std::size_t> rewire_sortedCostIndices;
+
     std::vector<int> valid;
     unsigned int rewireTest = 0;
     unsigned int statesGenerated = 0;
@@ -505,6 +509,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
 
     // our functor for sorting nearest neighbors
     CostIndexCompare compareFn(costs, *opt_);
+    CostIndexCompare rewire_compareFn(rewire_costs, *opt_);
 
     bool solution_updated = false;
     std::pair<ob::State *, double> sample_lastValid;
@@ -547,6 +552,14 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
 
         // Check if the motion between the nearest state and the state to add is valid
         bool sample_propagation = model_mv_->checkMotion(nmotion->state, dstate, sample_lastValid);
+        if(useSampleReUse_)
+        {
+            if(!sample_propagation && sample_lastValid.second > 0)
+            {
+                si_->copyState(dstate, sample_lastValid.first);
+                sample_propagation = model_mv_->checkMotion(nmotion->state, dstate, sample_lastValid);
+            }
+        }
         if (sample_propagation) // || sample_lastValid.second > 0)
         {
             // create a motion
@@ -785,15 +798,52 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                             // and update nbh[i]->parent = last node of intermediate trajectory
                             if(useTrejectoryExpansion_)
                             {
-                                // OMPL_INFORM("debug4 !");
-                                Motion *connected_motion = motion->parent;
+                                Motion * rewire_parent = motion;
+                                if(useTrajectoryConnection_)
+                                {
+                                    // decide which node in the newly added trajectory to rewire
+                                    if (rewire_costs.size() < tempTrajectoryMotions_.size())
+                                    {
+                                        rewire_costs.resize(tempTrajectoryMotions_.size());
+                                        rewire_incCosts.resize(tempTrajectoryMotions_.size());
+                                        rewire_sortedCostIndices.resize(tempTrajectoryMotions_.size());
+                                    }
+                                    for (std::size_t k = 0; k < tempTrajectoryMotions_.size(); ++k)
+                                    {
+                                        rewire_incCosts[k] = opt_->motionCost(tempTrajectoryMotions_[k]->state, nbh[i]->state);
+                                        rewire_costs[k] = opt_->combineCosts(tempTrajectoryMotions_[k]->cost, rewire_incCosts[k]);
+                                    }
+                                    for (std::size_t k = 0; k < tempTrajectoryMotions_.size(); ++k)
+                                        rewire_sortedCostIndices[k] = k;
+                                    std::sort(rewire_sortedCostIndices.begin(), rewire_sortedCostIndices.begin() + tempTrajectoryMotions_.size(), rewire_compareFn);
+
+                                    for (std::vector<std::size_t>::const_iterator k = rewire_sortedCostIndices.begin();
+                                        k != rewire_sortedCostIndices.begin() + tempTrajectoryMotions_.size(); ++k)
+                                    {
+                                        std::pair<ob::State *, double> lastValid_temp;
+                                        lastValid_temp.second = 0.0;
+                                        if (tempTrajectoryMotions_[*k] == motion ||
+                                            ((!useKNearest_ || si_->distance(tempTrajectoryMotions_[*k]->state, nbh[i]->state) < maxDistance_) &&
+                                            model_mv_->checkMotion(tempTrajectoryMotions_[*k]->state, nbh[i]->state, lastValid_temp)))
+                                        {
+                                            // OMPL_DEBUG("debug: update rewire connect node with tempTrajectoryMotions_[%u]", *k);
+                                            // si_->printState(nbh[*i]->state);
+                                            // si_->printState(motion->state);
+                                            // index_s = *k;
+                                            // nbh[i]->incCost = rewire_incCosts[*k];
+                                            // nbh[i]->cost = rewire_costs[*k];
+                                            // nbh[i]->parent = tempTrajectoryMotions_[*k];
+                                            // nbh[i]->intime = lastValid_temp.second;
+                                            // nbh[i]->time = lastValid_temp.second+tempTrajectoryMotions_[*k]->time;
+                                            rewire_parent = tempTrajectoryMotions_[*k];
+                                            break;
+                                        }
+                                    }
+                                }
+                                // Motion *connected_motion = motion->parent;
                                 std::vector<ob::State *> trajectory_states;
                                 std::vector<double> time_stamps;
-                                // ob::MotionValidatorPtr mv = si_->getMotionValidator();
-                                // const std::shared_ptr<ob::ModelMotionValidator> model_mv = std::dynamic_pointer_cast<ob::ModelMotionValidator>(mv);
-                                // bool fake_check = model_mv_->checkMotion(motion->state, nbh[i]->state);
-                                // bool fake_check_2 = model_mv_->checkMotion(motion->state, nbh[i]->state, lastValid_rewire);
-                                bool recheck = model_mv_->checkMotion(motion->state, nbh[i]->state, trajectory_states, time_stamps);
+                                bool recheck = model_mv_->checkMotion(rewire_parent->state, nbh[i]->state, trajectory_states, time_stamps);
                                 if(!recheck)
                                 {
                                     // si_->freeStates(trajectory_states);
@@ -802,17 +852,17 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                                 }
                                 if(trajectory_states.empty())
                                 {
-                                    nbh[i]->parent = motion;
+                                    nbh[i]->parent = rewire_parent;
                                     nbh[i]->incCost = nbhIncCost;
                                     nbh[i]->cost = nbhNewCost;
                                     nbh[i]->parent->children.push_back(nbh[i]);
                                     nbh[i]->intime = lastValid_rewire.second;
-                                    nbh[i]->time = lastValid_rewire.second + motion->time;
+                                    nbh[i]->time = lastValid_rewire.second + rewire_parent->time;
                                 }
                                 else
                                 {
                                     std::vector<Motion *> intermotions;
-                                    Motion* last_motion = motion;
+                                    Motion* last_motion = rewire_parent;
                                     for (std::size_t i = 0; i < trajectory_states.size(); ++i)
                                     {
                                         Motion *inter_motion = new Motion(si_);
@@ -1456,9 +1506,16 @@ ompl::base::Cost CL_RRTstar::solutionHeuristic(const Motion *motion) const
         // Find the min from each start
         for (auto &startMotion : startMotions_)
         {
-            costToCome = opt_->betterCost(
-                costToCome, opt_->motionCost(startMotion->state,
-                                            motion->state));  // lower-bounding cost from the start to the state
+            if(useManhattanHeuristic_)
+            {
+                // todo: change to Manhattan distance metric
+            }
+            else
+            {
+                costToCome = opt_->betterCost(
+                    costToCome, opt_->motionCost(startMotion->state,
+                                                motion->state));  // lower-bounding cost from the start to the state
+            }
         }
     }
     else

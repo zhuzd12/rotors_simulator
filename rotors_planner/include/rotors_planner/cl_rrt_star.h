@@ -211,6 +211,26 @@ namespace rotors_planner_rrtstar
             return useAdmissibleCostToCome_;
         }
 
+        void setSampleReUse(const bool useSampleReUse)
+        {
+            useSampleReUse_ = useSampleReUse;
+        }
+
+        bool getSampleReUse() const
+        {
+            return useSampleReUse_;
+        }
+
+        void setTrajectoryConnection(const bool TrajectoryConnection)
+        {
+            useTrajectoryConnection_ = TrajectoryConnection;
+        }
+
+        bool getTrajectoryConnection() const
+        {
+            return useTrajectoryConnection_;
+        }
+
         void setOrderedSampling(bool orderSamples);
 
         bool getOrderedSampling() const
@@ -423,7 +443,13 @@ namespace rotors_planner_rrtstar
 
         bool useKNearest_{true};
 
+        bool useManhattanHeuristic_{false};
+
         bool useTrejectoryExpansion_{true};
+
+        bool useSampleReUse_{true};
+
+        bool useTrajectoryConnection_{true};
 
         double rewireFactor_{1.1};
 
