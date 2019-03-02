@@ -439,8 +439,11 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
     const ob::State *st = pdef_->getStartState(0);
     // std::stringstream ss;
     si_->printState(st);
-    std::clock_t start_time;
+    clock_t start = std::clock();
     int pre_plan_prune_nodes = onlinePruneTree(st);
+    clock_t ends = std::clock();
+    OMPL_INFORM("pre plan prune stage spend time: %lf", (double)(ends - start)/CLOCKS_PER_SEC);
+    loop_prune_time_ = (double)(ends - start)/CLOCKS_PER_SEC;
     pruned_nodes_num_ = pre_plan_prune_nodes;
     plan_loop_++;
     OMPL_INFORM("planning loop: %d, %d nodes pruned before planning.", plan_loop_, pre_plan_prune_nodes);

@@ -318,6 +318,16 @@ namespace rotors_planner_rrtstar
             return tracking_error_;
         }
 
+        double getLoopPruneTime()
+        {
+            return loop_prune_time_;
+        }
+
+        double getBestCost()
+        {
+            return bestCost_.value();
+        }
+
         unsigned int getPruneTreeSize()
         {
             return pruned_nodes_num_;
@@ -326,6 +336,8 @@ namespace rotors_planner_rrtstar
     protected:
 
         double predicted_time_{0};
+
+        double loop_prune_time_{0};
 
         double tracking_error_{0};
 

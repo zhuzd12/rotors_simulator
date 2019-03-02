@@ -26,6 +26,9 @@ class PlannerLogger():
         self.planner_logger.log_tabular('trackerror', trackerror)
         self.planner_logger.log_tabular('treesize', info.data[3])
         self.planner_logger.log_tabular('prunetreesize', info.data[4])
+        self.planner_logger.log_tabular('prunetime', info.data[5])
+        self.planner_logger.log_tabular('bestcost', info.data[6])
+        self.planner_logger.log_tabular('time', info.data[7])
         self.planner_logger.dump_tabular()
 
 if __name__ == '__main__':
@@ -35,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp_name', type=str, default='cl_rrt_star')
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
-    info_list = ['loop', 'prediction', 'trackerror', 'treesize', 'prunetreesize']
+    info_list = ['loop', 'prediction', 'trackerror', 'treesize', 'prunetreesize', 'prunetime', 'bestcost', 'time']
     DEFAULT_DATA_DIR = osp.join(osp.abspath(osp.dirname(osp.dirname(__file__))),'data')
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed, data_dir = DEFAULT_DATA_DIR)
     logger = PlannerLogger(info_list=info_list, logger_kwargs=logger_kwargs)

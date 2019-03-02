@@ -351,8 +351,8 @@ void DynConfigCallback(ros::ServiceClient &client, ob::SpaceInformationPtr &si, 
   tf.setIdentity();
   tf.linear() = R;
   tf.translation() = current_position;
-  // if(obstacle_obj)
-  //   delete obstacle_obj;
+  if(obstacle_obj)
+    delete obstacle_obj;
   obstacle_obj = new fcl::CollisionObjectd(boxGeometry, tf);
   // si->setStateValidityChecker(std::bind(&isStateValid, si.get(), octomap_, obstacle_obj, std::placeholders::_1));
   // si->setup();
@@ -1006,13 +1006,16 @@ int main(int argc, char **argv)
     if(show_tree)
         marker_pub.publish(line_tree);    
     // octomap_pub.publish(octo_msg);
-    loops += 1.0*loop_plan_time;
+    loops += 1.0;
     planning_info.data.clear();
     planning_info.data.push_back(loops);
     planning_info.data.push_back(planner->getPredictionEstimation());
     planning_info.data.push_back(planner->getLoopTrackingError());
     planning_info.data.push_back(planner->getTreeSize());
     planning_info.data.push_back(planner->getPruneTreeSize());
+    planning_info.data.push_back(planner->getLoopPruneTime());
+    planning_info.data.push_back(planner->getBestCost());
+    planning_info.data.push_back(loops*loop_plan_time);
     planning_info_pub.publish(planning_info);
     ros::spinOnce();
   }
