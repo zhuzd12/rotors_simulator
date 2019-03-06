@@ -226,7 +226,7 @@ int CL_RRTstar::onlinePruneTree(const ob::State * current_state)
     // std::vector< ob::PlannerSolution > solutions = pdef_->getSolutions();
     pdef_->clearSolutionPaths();
 
-    if((!find_root && min_dis > path_replan_deviation_) || new_root_index==0)
+    if((!find_root || min_dis > path_replan_deviation_) || new_root_index==0)
     {
         OMPL_INFORM("previous info can be discarded totally");
         freeMemory();
@@ -608,99 +608,115 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             // By default, neighborhood states are sorted by cost, and collision checking
             // is performed in increasing order of cost
             int index_s = -1;
-            if (delayCC_)
+            bool use_optimization_heuristic;
+            if(bestGoalMotion_)
             {
-                // calculate all costs and distances
-                for (std::size_t i = 0; i < nbh.size(); ++i)
-                {
-                    incCosts[i] = opt_->motionCost(nbh[i]->state, motion->state);
-                    costs[i] = opt_->combineCosts(nbh[i]->cost, incCosts[i]);
-                }
-
-                // sort the nodes
-                //
-                // we're using index-value pairs so that we can get at
-                // original, unsorted indices
-                for (std::size_t i = 0; i < nbh.size(); ++i)
-                    sortedCostIndices[i] = i;
-                std::sort(sortedCostIndices.begin(), sortedCostIndices.begin() + nbh.size(), compareFn);
-
-                // collision check until a valid motion is found
-                //
-                // ASYMMETRIC CASE: it's possible that none of these
-                // neighbors are valid. This is fine, because motion
-                // already has a connection to the tree through
-                // nmotion (with populated cost fields!).
-                for (std::vector<std::size_t>::const_iterator i = sortedCostIndices.begin();
-                    i != sortedCostIndices.begin() + nbh.size(); ++i)
-                {
-                    std::pair<ob::State *, double> lastValid_temp;
-                    lastValid_temp.second = 0.0;
-                    if (nbh[*i] == nmotion ||
-                        ((!useKNearest_ || si_->distance(nbh[*i]->state, motion->state) < maxDistance_) &&
-                        model_mv_->checkMotion(nbh[*i]->state, motion->state, lastValid_temp)))
-                    {
-                        // OMPL_DEBUG("debug: update connect node with nbh[%u]", *i);
-                        // si_->printState(nbh[*i]->state);
-                        // si_->printState(motion->state);
-                        index_s = *i;
-                        motion->incCost = incCosts[*i];
-                        motion->cost = costs[*i];
-                        motion->parent = nbh[*i];
-                        motion->intime = lastValid_temp.second;
-                        motion->time = lastValid_temp.second+nbh[*i]->time;
-                        valid[*i] = 1;
-                        break;
-                    }
-                    else
-                        valid[*i] = -1;
-                }
-
+                use_optimization_heuristic = rng_.uniform01()<=1.0;
             }
-            else  // if not delayCC
+            else
             {
-                motion->incCost = opt_->motionCost(nmotion->state, motion->state);
-                motion->cost = opt_->combineCosts(nmotion->cost, motion->incCost);
-                // find which one we connect the new state to
-                for (std::size_t i = 0; i < nbh.size(); ++i)
+                use_optimization_heuristic = rng_.uniform01()<=1.0;
+            }
+            
+            if(use_optimization_heuristic)
+            {
+                if (delayCC_)
                 {
-                    if (nbh[i] != nmotion)
+                    // calculate all costs and distances
+                    for (std::size_t i = 0; i < nbh.size(); ++i)
                     {
                         incCosts[i] = opt_->motionCost(nbh[i]->state, motion->state);
                         costs[i] = opt_->combineCosts(nbh[i]->cost, incCosts[i]);
-                        if (opt_->isCostBetterThan(costs[i], motion->cost))
+                    }
+
+                    // sort the nodes
+                    //
+                    // we're using index-value pairs so that we can get at
+                    // original, unsorted indices
+                    for (std::size_t i = 0; i < nbh.size(); ++i)
+                        sortedCostIndices[i] = i;
+                    std::sort(sortedCostIndices.begin(), sortedCostIndices.begin() + nbh.size(), compareFn);
+
+                    // collision check until a valid motion is found
+                    //
+                    // ASYMMETRIC CASE: it's possible that none of these
+                    // neighbors are valid. This is fine, because motion
+                    // already has a connection to the tree through
+                    // nmotion (with populated cost fields!).
+                    for (std::vector<std::size_t>::const_iterator i = sortedCostIndices.begin();
+                        i != sortedCostIndices.begin() + nbh.size(); ++i)
+                    {
+                        std::pair<ob::State *, double> lastValid_temp;
+                        lastValid_temp.second = 0.0;
+                        if (nbh[*i] == nmotion ||
+                            ((!useKNearest_ || si_->distance(nbh[*i]->state, motion->state) < maxDistance_) &&
+                            model_mv_->checkMotion(nbh[*i]->state, motion->state, lastValid_temp)))
                         {
-                            std::pair<ob::State *, double> lastValid_temp;
-                            lastValid_temp.second = 0.0;
-                            if ((!useKNearest_ || si_->distance(nbh[i]->state, motion->state) < maxDistance_) &&
-                                model_mv_->checkMotion(nbh[i]->state, motion->state, lastValid_temp))
+                            // OMPL_DEBUG("debug: update connect node with nbh[%u]", *i);
+                            // si_->printState(nbh[*i]->state);
+                            // si_->printState(motion->state);
+                            index_s = *i;
+                            motion->incCost = incCosts[*i];
+                            motion->cost = costs[*i];
+                            motion->parent = nbh[*i];
+                            motion->intime = lastValid_temp.second;
+                            motion->time = lastValid_temp.second+nbh[*i]->time;
+                            valid[*i] = 1;
+                            break;
+                        }
+                        else
+                            valid[*i] = -1;
+                    }
+
+                }
+                else  // if not delayCC
+                {
+                    motion->incCost = opt_->motionCost(nmotion->state, motion->state);
+                    motion->cost = opt_->combineCosts(nmotion->cost, motion->incCost);
+                    // find which one we connect the new state to
+                    for (std::size_t i = 0; i < nbh.size(); ++i)
+                    {
+                        if (nbh[i] != nmotion)
+                        {
+                            incCosts[i] = opt_->motionCost(nbh[i]->state, motion->state);
+                            costs[i] = opt_->combineCosts(nbh[i]->cost, incCosts[i]);
+                            if (opt_->isCostBetterThan(costs[i], motion->cost))
                             {
-                                // OMPL_DEBUG("debug: update connect node");
-                                // si_->printState(nbh[i]->state);
-                                // si_->printState(motion->state);
-                                motion->incCost = incCosts[i];
-                                motion->cost = costs[i];
-                                motion->parent = nbh[i];
-                                motion->intime = lastValid_temp.second;
-                                motion->time = lastValid_temp.second+nbh[i]->time;
-                                valid[i] = 1;
+                                std::pair<ob::State *, double> lastValid_temp;
+                                lastValid_temp.second = 0.0;
+                                if ((!useKNearest_ || si_->distance(nbh[i]->state, motion->state) < maxDistance_) &&
+                                    model_mv_->checkMotion(nbh[i]->state, motion->state, lastValid_temp))
+                                {
+                                    index_s = i;
+                                    // OMPL_DEBUG("debug: update connect node");
+                                    // si_->printState(nbh[i]->state);
+                                    // si_->printState(motion->state);
+                                    motion->incCost = incCosts[i];
+                                    motion->cost = costs[i];
+                                    motion->parent = nbh[i];
+                                    motion->intime = lastValid_temp.second;
+                                    motion->time = lastValid_temp.second+nbh[i]->time;
+                                    valid[i] = 1;
+                                }
+                                else
+                                    valid[i] = -1;
                             }
-                            else
-                                valid[i] = -1;
+                        }
+                        else
+                        {
+                            incCosts[i] = motion->incCost;
+                            costs[i] = motion->cost;
+                            valid[i] = 1;
                         }
                     }
-                    else
-                    {
-                        incCosts[i] = motion->incCost;
-                        costs[i] = motion->cost;
-                        valid[i] = 1;
-                    }
                 }
-            }
+            }   
             
             Motion *connected_motion = motion->parent;
-            assert(index_s != -1);
-            assert(connected_motion == nbh[index_s]);
+            // maybe when we change dstate after we get nmotion by calling nn_->nearest(motion)
+            // the nmotion no more in getNeighbors(motion, nbh)
+            // assert(index_s != -1);
+            // assert(connected_motion == nbh[index_s]);
             // OMPL_DEBUG("nbh size: %u", nbh.size());
             if (!useNewStateRejection_ || (useNewStateRejection_ && opt_->isCostBetterThan(solutionHeuristic(motion), bestCost_)))
             {
@@ -764,6 +780,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             bool checkForSolution = false;
             std::pair<ob::State *, double> lastValid_rewire;
             // lastValid_rewire.first = si_->allocState();
+            std::vector<Motion *> rewire_inter_motions;
             for (std::size_t i = 0; i < nbh.size(); ++i)
             {   
                 if (nbh[i] != connected_motion)
@@ -861,7 +878,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                                 }
                                 else
                                 {
-                                    std::vector<Motion *> intermotions;
+                                    // std::vector<Motion *> intermotions;
                                     Motion* last_motion = rewire_parent;
                                     for (std::size_t i = 0; i < trajectory_states.size(); ++i)
                                     {
@@ -873,9 +890,10 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                                         inter_motion->time = inter_motion->intime + last_motion->time;
                                         inter_motion->parent = last_motion;
                                         inter_motion->parent->children.push_back(inter_motion);
-                                        intermotions.push_back(inter_motion);
                                         nn_->add(inter_motion);
-                                        last_motion = inter_motion;                     
+                                        last_motion = inter_motion;
+                                        if(i)
+                                            rewire_inter_motions.push_back(inter_motion);                    
                                     }
                                     nbh[i]->parent = last_motion;
                                     nbh[i]->incCost = opt_->identityCost();
@@ -904,12 +922,49 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             }
 
             // Add the new motion to the goalMotion_ list, if it satisfies the goal
-            double distanceFromGoal;
-            if (goal->isSatisfied(motion->state, &distanceFromGoal))
+            double distanceFromGoal{std::numeric_limits<double>::infinity()};
+            double temp_distanceFromGoal;
+            Motion * goal_nearest_motion = motion;
+            if(useTrejectoryExpansion_ && checkunstopnode_)
             {
-                motion->inGoal = true;
-                goalMotions_.push_back(motion);
-                checkForSolution = true;
+                for(auto new_motion: tempTrajectoryMotions_)
+                {
+                    if(goal->isSatisfied(new_motion->state, &temp_distanceFromGoal))
+                    {
+                    new_motion->inGoal = true;
+                    goalMotions_.push_back(new_motion);
+                    checkForSolution = true;
+                    }
+                    if(distanceFromGoal > temp_distanceFromGoal)
+                    {
+                        distanceFromGoal = temp_distanceFromGoal;
+                        goal_nearest_motion = new_motion;
+                    }
+                }
+                for(auto new_motion: rewire_inter_motions)
+                {
+                    if(goal->isSatisfied(new_motion->state, &temp_distanceFromGoal))
+                    {
+                    new_motion->inGoal = true;
+                    goalMotions_.push_back(new_motion);
+                    checkForSolution = true;
+                    }
+                    if(distanceFromGoal > temp_distanceFromGoal)
+                    {
+                        distanceFromGoal = temp_distanceFromGoal;
+                        goal_nearest_motion = new_motion;
+                    }
+                }
+                rewire_inter_motions.clear();
+            }
+            else
+            {
+                if (goal->isSatisfied(motion->state, &distanceFromGoal))
+                {
+                    motion->inGoal = true;
+                    goalMotions_.push_back(motion);
+                    checkForSolution = true;
+                }
             }
 
             // Checking for solution or iterative improvement
@@ -920,7 +975,16 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                 {
                     // We have found our first solution, store it as the best. We only add one
                     // vertex at a time, so there can only be one goal vertex at this moment.
-                    bestGoalMotion_ = goalMotions_.front();
+                    // todo: find best gola motion in golaMotions_
+                    std::priority_queue<Motion*,std::vector<Motion*>, GoalMotionCompare> goal_motion_que;
+                    for (auto &goalMotion : goalMotions_)
+                    {
+                        goal_motion_que.push(goalMotion);
+                    }
+                    // OMPL_DEBUG("best cost: %lf", bestGoalMotion_->cost.value());
+                    // OMPL_DEBUG("top cost: %lf", goal_motion_que.top()->cost.value());
+                    bestGoalMotion_ = goal_motion_que.top();
+                    // bestGoalMotion_ = goalMotions_.front();
                     bestCost_ = bestGoalMotion_->cost;
                     updatedSolution = true;
                     solution_updated = true;
@@ -980,7 +1044,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
             // Checking for approximate solution (closest state found to the goal)
             if (goalMotions_.size() == 0 && distanceFromGoal < approxDist_)
             {
-                approxGoalMotion_ = motion;
+                approxGoalMotion_ = goal_nearest_motion;
                 approxDist_ = distanceFromGoal;
                 solution_updated = true;
             }

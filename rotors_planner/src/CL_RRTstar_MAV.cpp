@@ -210,7 +210,7 @@ bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_
   const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
   Eigen::Map<Eigen::Vector3d> current_angular(s.as<ob::RealVectorStateSpace::StateType>(0)->values);
   Eigen::Map<Eigen::Vector3d> current_position(s.as<ob::RealVectorStateSpace::StateType>(1)->values);
-  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.5, 0.5, 0.3));
+  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.1, 0.1, 0.1));
   fcl::Matrix3d R;
   R = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
       * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
@@ -1019,10 +1019,10 @@ int main(int argc, char **argv)
 
     // publish msg
     trajectory_pub.publish(traj_msg);
+    marker_pub.publish(obstacle_maker);
     marker_pub.publish(line_actual);
     marker_pub.publish(points);
     marker_pub.publish(line_strip);
-    marker_pub.publish(obstacle_maker);
     if(show_tree)
         marker_pub.publish(line_tree);    
     // octomap_pub.publish(octo_msg);

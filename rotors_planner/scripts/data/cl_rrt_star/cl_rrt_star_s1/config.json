@@ -15,9 +15,9 @@
         "output_dir":	"/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_star/cl_rrt_star_s1"
     },
     "self":	{
-        "<__main__.PlannerLogger object at 0x7f26f230ffd0>":	{
+        "<__main__.PlannerLogger object at 0x7f9ef4fc4278>":	{
             "planner_logger":	{
-                "<spinup.utils.logx.EpochLogger object at 0x7f26f230ff98>":	{
+                "<spinup.utils.logx.EpochLogger object at 0x7f9ef4fc4240>":	{
                     "epoch_dict":	{},
                     "exp_name":	"cl_rrt_star",
                     "first_row":	true,

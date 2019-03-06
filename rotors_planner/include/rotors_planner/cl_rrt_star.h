@@ -459,6 +459,8 @@ namespace rotors_planner_rrtstar
 
         bool delayCC_{true};
 
+        bool checkunstopnode_{true};
+
         ob::OptimizationObjectivePtr opt_;
 
         Motion *bestGoalMotion_{nullptr};
