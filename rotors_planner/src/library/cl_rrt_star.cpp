@@ -750,6 +750,7 @@ ompl::base::PlannerStatus CL_RRTstar::solve(const ob::PlannerTerminationConditio
                             inter_motion->incCost = opt_->motionCost(last_motion->state, inter_motion->state);
                             inter_motion->cost = opt_->combineCosts(last_motion->cost, inter_motion->incCost);
                             inter_motion->intime = time_stamps[i];
+                            inter_motion->time = inter_motion->intime + last_motion->time;
                             inter_motion->parent = last_motion;
                             inter_motion->parent->children.push_back(inter_motion);
                             tempTrajectoryMotions_.push_back(inter_motion);
@@ -1136,6 +1137,14 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
     if(!pdef_->hasSolution() || (!approxGoalMotion_ && !bestGoalMotion_))
     {
         OMPL_INFORM("no solution to repropagate");
+        time_stamps.clear();
+        best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
+        best_path->append(current_state);
+        time_stamps.push_back(0.0);
+        // Add the solution path.
+        ob::PlannerSolution psol(best_path);
+        pdef_->addSolutionPath(psol);
+        rePropagation_flag_ = true;
         return result;
     }
 
@@ -1183,12 +1192,14 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
         double approach_dis{std::numeric_limits<double>::infinity()};
         ob::State *solution_nearst_state;
         int index = 0;
+        double repro_begin_time = 0;
         while(iter_motion)
         {
             if(si_->distance(current_state, iter_motion->state) < approach_dis)
             {
                 approach_dis = si_->distance(current_state, iter_motion->state);
                 solution_nearst_state = iter_motion->state;
+                repro_begin_time = iter_motion->time;
                 index ++;
             }
             iter_motion = iter_motion->parent;
@@ -1221,7 +1232,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
                 for (int i = mpath.size() - 1; i >= 0; --i)
                 {
                     best_path->append(mpath[i]->state);
-                    time_stamps.push_back(0.1);
+                    time_stamps.push_back(mpath[i]->time - mpath.back()->time);
                 }
                 // Add the solution path.
                 ob::PlannerSolution psol(best_path);
@@ -1249,8 +1260,10 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
     else
     {
         OMPL_WARN("repropagation failed and send stop trajecotry");
+        time_stamps.clear();
         best_path = std::make_shared<ompl::geometric::PathGeometric>(si_);
         best_path->append(current_state);
+        time_stamps.push_back(0.0);
         // Add the solution path.
         ob::PlannerSolution psol(best_path);
         pdef_->addSolutionPath(psol);

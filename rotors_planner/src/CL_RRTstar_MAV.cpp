@@ -210,7 +210,7 @@ bool isStateValid(const ob::SpaceInformation *si, const octomap::OcTree *octree_
   const ob::CompoundStateSpace::StateType& s = *state->as<ob::CompoundStateSpace::StateType>();
   Eigen::Map<Eigen::Vector3d> current_angular(s.as<ob::RealVectorStateSpace::StateType>(0)->values);
   Eigen::Map<Eigen::Vector3d> current_position(s.as<ob::RealVectorStateSpace::StateType>(1)->values);
-  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.1, 0.1, 0.1));
+  std::shared_ptr<fcl::CollisionGeometry<double>> boxGeometry (new fcl::Box<double> (0.5, 0.5, 0.3));
   fcl::Matrix3d R;
   R = Eigen::AngleAxisd(current_angular[2], Eigen::Vector3d::UnitZ())
       * Eigen::AngleAxisd(current_angular[1], Eigen::Vector3d::UnitY())
@@ -923,13 +923,14 @@ int main(int argc, char **argv)
         mav_msgs::EigenTrajectoryPoint trajectory_point;
         trajectory_point.position_W = c_position;
         trajectory_point.setFromYaw(c_yaw);
-        // if(i<30)
-        // {
-        //     std::cout <<"waypoint position: "<<c_position(0) <<" "<<c_position(1)<<" "<<c_position(2)<<std::endl;
-        //     std::cout<<"waypoint yaw: "<<c_yaw<<std::endl;
-        // }
-        trajectory_point.time_from_start_ns = time_from_start_ns;
-        time_from_start_ns += static_cast<int64_t>(waypoint_interval * kNanoSecondsInSecond);
+        if(i<5)
+        {
+            // std::cout <<"waypoint position: "<<c_position(0) <<" "<<c_position(1)<<" "<<c_position(2)<<std::endl;
+            // std::cout<<"waypoint yaw: "<<c_yaw<<std::endl;
+            std::cout<<"time: "<<time_stamps[i]<<std::endl;
+        }
+        trajectory_point.time_from_start_ns = static_cast<int64_t>(5*time_stamps[i] * kNanoSecondsInSecond);
+        time_from_start_ns += static_cast<int64_t>(5*time_stamps[i] * kNanoSecondsInSecond);
         mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &traj_msg->points[i]);
     }
 
