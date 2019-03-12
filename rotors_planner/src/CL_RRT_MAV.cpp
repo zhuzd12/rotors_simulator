@@ -281,7 +281,7 @@ int main(int argc, char **argv)
   }
 
   // Wait for 15s such that everything can settle and the mav flies to the initial position.
-  ros::Duration(15).sleep();
+  ros::Duration(5.0).sleep();
 
 
   //rotors_control::VehicleParameters vehicle_parameters_;
@@ -540,7 +540,7 @@ int main(int argc, char **argv)
 //    std::cout << "Waypoint XYZ: " << wp.position(0) << " "
 //              <<  wp.position(1) <<  " " <<  wp.position(2)  << std::endl;
 
-    time_from_start_ns += static_cast<int64_t>(wp.waiting_time * kNanoSecondsInSecond);
+    time_from_start_ns += static_cast<int64_t>(1.0 * kNanoSecondsInSecond);
     mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &msg->points[i]);
   }
 

@@ -15,15 +15,15 @@ workspace:
 propagation:
   use_propagation: True
   step_size: 0.01
-  waypoint_interval: 0.02
+  waypoint_interval: 0.05
   max_loop: 200
 
 planner:
   initial_plan_time: 1.0
-  loop_plan_time: 1.0
+  loop_plan_time: 5.0
   path_deviation: 0.2
   path_resolution: 0.25
-  sample_connect_range: 2.0
+  sample_connect_range: 5.0
   setKNearest: True
   path_replan_deviation: 0.5
   goalbias: 0.1

@@ -226,7 +226,7 @@ int CL_RRTstar::onlinePruneTree(const ob::State * current_state)
     // std::vector< ob::PlannerSolution > solutions = pdef_->getSolutions();
     pdef_->clearSolutionPaths();
 
-    if((!find_root || min_dis > path_replan_deviation_) || new_root_index==0)
+    if((!find_root || min_dis > 10000*path_replan_deviation_) || new_root_index==0)
     {
         OMPL_INFORM("previous info can be discarded totally");
         freeMemory();
@@ -1207,7 +1207,7 @@ bool CL_RRTstar::rePropagation(ob::State * current_state, std::shared_ptr<ompl::
 
         OMPL_DEBUG("%d th solution nearest index %d, dis: %lf", i, index, approach_dis);
         bool path_validity = true;
-        if(approach_dis < 0.5 || model_mv_->checkMotion(current_state, solution_nearst_state))
+        if(approach_dis < 10.5 || model_mv_->checkMotion(current_state, solution_nearst_state))
         {
             // set the solution path
             std::vector<Motion *> mpath;

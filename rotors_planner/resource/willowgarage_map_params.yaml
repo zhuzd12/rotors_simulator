@@ -15,20 +15,20 @@ workspace:
 propagation:
   use_propagation: true
   step_size: 0.01
-  waypoint_interval: 0.04
+  waypoint_interval: 0.08
   max_loop: 100
 
 planner:
   initial_plan_time: 1.0
-  loop_plan_time: 1.0
+  loop_plan_time: 16.2
   path_deviation: 0.2
   path_resolution: 0.25
-  sample_connect_range: 5.0
+  sample_connect_range: 3.0
   setKNearest: true
   path_replan_deviation: 1.0
   goalbias: 0.10
   useAdmissibleCostToCome: true
-  useRejectionSampling: true
+  useRejectionSampling: false
   useNewStateRejection: false
   useTreePruning: false
   useTrejectoryExpansion: true
@@ -36,4 +36,4 @@ planner:
   useTrajectoryConnection: true
 
 rviz:
-  show_tree: true
+  show_tree: false

@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
   ROS_INFO("...ok");
 
   // Wait for 10s such that everything can settle and the mav flies to the initial position.
-  ros::Duration(10).sleep();
+  ros::Duration(20.0).sleep();
 
   ROS_INFO("Start publishing waypoints.");
 

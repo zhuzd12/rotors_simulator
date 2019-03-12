@@ -1,6 +1,6 @@
 <launch>
   <arg name="mav_name" default="firefly"/>
-  <arg name="world_name" default="willowgarage"/>
+  <arg name="world_name" default="basic"/>
   <arg name="enable_logging" default="false" />
   <arg name="enable_ground_truth" default="true" />
   <arg name="log_file" default="$(arg mav_name)" />
@@ -59,15 +59,9 @@
     <arg name="y" value="0.0"/>
     <arg name="z" value="1.0"/>
     </node> -->
-    <node name="hovering_example" pkg="rotors_gazebo" type="hovering_example" output="screen"/>
-    <node name="CL_RRTstar_MAV" pkg="rotors_planner" type="CL_RRTstar_MAV" args="$(find rotors_gazebo)/models/big_box/meshes/model.sdf" output="screen">
-      <param name="map_path" value="$(find rotors_planner)/resource/$(arg world_name).bt"/>
-      <rosparam command="load" file="$(find rotors_gazebo)/resource/lee_controller_$(arg mav_name).yaml" />
-      <rosparam command="load" file="$(find rotors_gazebo)/resource/$(arg mav_name).yaml" />
-      <rosparam command="load" file="$(find rotors_planner)/resource/$(arg world_name)_map_params.yaml" />
-    </node>
 
-    <!-- <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_gazebo)/resource/agent1_waypoints_basic.txt"/> -->
+
+    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_gazebo)/resource/agent1_waypoints_basic.txt"/>
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
     <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
   </group>
@@ -80,8 +74,8 @@
       <arg name="enable_logging" value="$(arg enable_logging)" />
       <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
       <arg name="log_file" value="$(arg log_file)2"/>
-      <arg name="x" value="-3.0"/>
-      <arg name="y" value="3.0"/>
+      <arg name="x" value="3.0"/>
+      <arg name="y" value="0.0"/>
       <!-- <arg name="z" value="2.0"/> -->
     </include>
 
@@ -117,7 +111,7 @@
     </node> -->
 
     <!-- <node name="hovering_example" pkg="rotors_gazebo" type="hovering_example" output="screen"/> -->
-    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_planner)/resource/rrt_agent2.txt"/>
+    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_gazebo)/resource/agent2_waypoints_basic.txt"/>
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
     <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
   </group>
@@ -130,7 +124,7 @@
       <arg name="enable_logging" value="$(arg enable_logging)" />
       <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
       <arg name="log_file" value="$(arg log_file)3"/>
-      <arg name="x" value="3.0"/>
+      <arg name="x" value="0.0"/>
       <arg name="y" value="3.0"/>
       <!-- <arg name="z" value="2.0"/> -->
     </include>
@@ -166,7 +160,7 @@
     </node> -->
 
     <!-- <node name="hovering_example" pkg="rotors_gazebo" type="hovering_example" output="screen"/> -->
-    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_planner)/resource/rrt_agent3.txt"/>
+    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_gazebo)/resource/agent3_waypoints_basic.txt"/>
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
     <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
   </group>
@@ -180,8 +174,8 @@
       <arg name="enable_logging" value="$(arg enable_logging)" />
       <arg name="enable_ground_truth" value="$(arg enable_ground_truth)" />
       <arg name="log_file" value="$(arg log_file)4"/>
-      <arg name="x" value="-3.0"/>
-      <arg name="y" value="0.0"/>
+      <arg name="x" value="3.0"/>
+      <arg name="y" value="3.0"/>
       <!-- <arg name="z" value="2.0"/> -->
     </include>
 
@@ -213,7 +207,7 @@
     <arg name="z" value="1.0"/>
     </node> -->
     <!-- <node name="hovering_example" pkg="rotors_gazebo" type="hovering_example" output="screen"/> -->
-    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_planner)/resource/rrt_agent4.txt"/>
+    <node name="waypoint_publisher_file" pkg="rotors_gazebo" type="waypoint_publisher_file" output="screen" args="$(find rotors_gazebo)/resource/agent4_waypoints_basic.txt"/>
 
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
     <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />

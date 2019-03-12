@@ -1,0 +1,36 @@
+{
+    "exp_name":	"cl_rrt_dynamic_map",
+    "info_list":	[
+        "loop",
+        "prediction",
+        "trackerror",
+        "treesize",
+        "prunetreesize",
+        "prunetime",
+        "bestcost",
+        "time"
+    ],
+    "logger_kwargs":	{
+        "exp_name":	"cl_rrt_dynamic_map",
+        "output_dir":	"/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_dynamic_map/cl_rrt_dynamic_map_s7"
+    },
+    "self":	{
+        "<__main__.PlannerLogger object at 0x7f235dee40f0>":	{
+            "planner_logger":	{
+                "<spinup.utils.logx.EpochLogger object at 0x7f235dee4198>":	{
+                    "epoch_dict":	{},
+                    "exp_name":	"cl_rrt_dynamic_map",
+                    "first_row":	true,
+                    "log_current_row":	{},
+                    "log_headers":	[],
+                    "output_dir":	"/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_dynamic_map/cl_rrt_dynamic_map_s7",
+                    "output_file":	{
+                        "<_io.TextIOWrapper name='/home/zhuzd/catkin_ws/src/rotors_simulator/rotors_planner/scripts/data/cl_rrt_dynamic_map/cl_rrt_dynamic_map_s7/progress.txt' mode='w' encoding='UTF-8'>":	{
+                            "mode":	"w"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

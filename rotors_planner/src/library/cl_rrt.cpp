@@ -1073,8 +1073,8 @@ void CL_rrt::recordSolution()
     og::PathGeometric &p = *(pdef_->getSolutionPath()->as<og::PathGeometric>());
    // std::static_pointer_cast<og::PathGeometric> p = pdf_->getSolutionPath();
     p.interpolate();
-    // double temp_t = 1.0;
-    double temp_t = siC_->getPropagationStepSize();
+    double temp_t = 1.0;
+    // double temp_t = 10*siC_->getPropagationStepSize();
     //const float DEG_2_RAD = M_PI / 180.0;
     for (std::size_t i = 0 ; i < p.getStateCount() ; ++i)
           {

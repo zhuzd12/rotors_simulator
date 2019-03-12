@@ -407,7 +407,7 @@ int main(int argc, char **argv)
   }
 
   // Wait for 10s such that everything can settle and the mav flies to the initial position.
-  ros::Duration(10).sleep();
+  ros::Duration(5.0).sleep();
 
   rotors_control::LeePositionController lee_position_controller_;
 
@@ -767,10 +767,10 @@ int main(int argc, char **argv)
   points.color.b = 154.0f/255.0f;
   points.color.a = 1.0;
 
-  line_strip.scale.x = 0.2;
-  line_strip.color.r = 34.0f/255.0f;
-  line_strip.color.g = 139.0f/255.0f;
-  line_strip.color.b = 34.0f/255.0f;
+  line_strip.scale.x = 0.05;
+  line_strip.color.r = 20.0f/255.0f;
+  line_strip.color.g = 20.0f/255.0f;
+  line_strip.color.b = 20.0f/255.0f;
   line_strip.color.a = 1.0;
 
   line_actual.scale.x = 0.2;
@@ -918,10 +918,12 @@ int main(int argc, char **argv)
         ob::State * current_s = solution_states[i];
         ob::CompoundStateSpace::StateType& c_s = *current_s->as<ob::CompoundStateSpace::StateType>();
         const Eigen::Map<Eigen::Vector3d> c_position(c_s.as<ob::RealVectorStateSpace::StateType>(1)->values);
+        const Eigen::Map<Eigen::Vector3d> c_velocity(c_s.as<ob::RealVectorStateSpace::StateType>(2)->values);
         const double c_yaw = c_s.as<ob::RealVectorStateSpace::StateType>(0)->values[2];
         
         mav_msgs::EigenTrajectoryPoint trajectory_point;
         trajectory_point.position_W = c_position;
+        // trajectory_point.velocity_W = c_velocity;
         trajectory_point.setFromYaw(c_yaw);
         if(i<5)
         {
@@ -929,7 +931,7 @@ int main(int argc, char **argv)
             // std::cout<<"waypoint yaw: "<<c_yaw<<std::endl;
             std::cout<<"time: "<<time_stamps[i]<<std::endl;
         }
-        trajectory_point.time_from_start_ns = static_cast<int64_t>(5*time_stamps[i] * kNanoSecondsInSecond);
+        trajectory_point.time_from_start_ns = static_cast<int64_t>(3*time_stamps[i] * kNanoSecondsInSecond);
         time_from_start_ns += static_cast<int64_t>(5*time_stamps[i] * kNanoSecondsInSecond);
         mav_msgs::msgMultiDofJointTrajectoryPointFromEigen(trajectory_point, &traj_msg->points[i]);
     }
@@ -1021,7 +1023,7 @@ int main(int argc, char **argv)
     // publish msg
     trajectory_pub.publish(traj_msg);
     marker_pub.publish(obstacle_maker);
-    marker_pub.publish(line_actual);
+    // marker_pub.publish(line_actual);
     marker_pub.publish(points);
     marker_pub.publish(line_strip);
     if(show_tree)
@@ -1038,7 +1040,7 @@ int main(int argc, char **argv)
     planning_info.data.push_back(planner->getBestCost());
     planning_info.data.push_back(loops*loop_plan_time);
     planning_info_pub.publish(planning_info);
-    ros::spinOnce();
+    // ros::spinOnce();
   }
   
   // free memory
